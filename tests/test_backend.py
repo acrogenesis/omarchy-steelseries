@@ -1,0 +1,367 @@
+import copy
+import json
+import os
+from pathlib import Path
+import sys
+import signal
+import subprocess
+import tempfile
+import time
+import unittest
+from unittest.mock import patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import arctis
+
+
+class MixTests(unittest.TestCase):
+    def test_hardware_endpoints_and_center(self):
+        self.assertEqual(arctis.gains(0), (1, 0))
+        self.assertEqual(arctis.gains(64), (1, 1))
+        self.assertEqual(arctis.gains(128), (0, 1))
+        self.assertEqual(arctis.gains(32), (1, .5))
+        self.assertEqual(arctis.gains(96), (.5, 1))
+        for value in (-1, 129, float('nan'), None, '64'):
+            with self.assertRaises(ValueError):
+                arctis.gains(value)
+
+    def test_saved_route_overrides_communications_default(self):
+        props = {'application.process.binary': 'vesktop', 'media.role': 'Communication'}
+        self.assertEqual(arctis.route_for(props, {}), arctis.CHAT)
+        self.assertEqual(arctis.route_for(props, {'vesktop': arctis.GAME}), arctis.GAME)
+
+    def test_failed_hid_read_preserves_kernel_status_and_clears_wheel(self):
+        with patch.object(arctis, 'read_power', return_value={'online': True, 'battery': 69, 'charging': False}):
+            backend = arctis.Backend()
+            backend.level = 64
+            with patch.object(arctis, 'run', side_effect=RuntimeError('Could not open device')):
+                backend.headset()
+            self.assertEqual(backend.power['battery'], 69)
+            self.assertIsNone(backend.level)
+            self.assertIn('Could not open', backend.control_error)
+
+    def test_present_receiver_with_unknown_power_does_not_validate_cached_battery(self):
+        with tempfile.TemporaryDirectory() as directory:
+            battery = Path(directory)
+            (battery / 'present').write_text('1\n')
+            (battery / 'capacity').write_text('68\n')
+            (battery / 'status').write_text('Unknown\n')
+            with patch.object(Path, 'glob', return_value=iter([battery])):
+                self.assertEqual(arctis.read_power(), {'online': None, 'battery': None, 'charging': False})
+            (battery / 'status').write_text('Discharging\n')
+            with patch.object(Path, 'glob', return_value=iter([battery])):
+                self.assertEqual(arctis.read_power(), {'online': True, 'battery': 68, 'charging': False})
+
+    def test_headset_power_off_clears_cached_battery_and_wheel_then_recovers(self):
+        def device(status, level, errors=None):
+            return {'devices': [{'id_product': '0x22a5', 'battery': {'status': status, 'level': level},
+                                 'chatmix': 64, 'errors': errors or {}}]}
+        snapshots = [device('BATTERY_AVAILABLE', 68),
+                     device('BATTERY_UNAVAILABLE', -1, {'battery': 'Device is offline or not responding'}),
+                     device('BATTERY_CHARGING', 67)]
+        # Deliberately simulate a stale, still-positive kernel reading; the
+        # receiver's explicit offline response must always take precedence.
+        with patch.object(arctis, 'read_power', return_value={'online': True, 'battery': 68, 'charging': False}), \
+             patch.object(arctis, 'run', side_effect=snapshots):
+            backend = arctis.Backend()
+            backend.headset()
+            self.assertEqual(backend.power, {'online': True, 'battery': 68, 'charging': False})
+            backend.headset()
+            self.assertEqual(backend.power, {'online': False, 'battery': None, 'charging': False})
+            self.assertIsNone(backend.level)
+            self.assertEqual(backend.control_error, '')
+            backend.headset()
+            self.assertEqual(backend.power, {'online': True, 'battery': 67, 'charging': True})
+            self.assertEqual(backend.level, 64)
+
+    def test_battery_permission_error_is_unknown_instead_of_offline_or_cached(self):
+        response = {'devices': [{'id_product': '0x22a5', 'battery': {'status': 'BATTERY_UNAVAILABLE', 'level': -1},
+                                 'chatmix': 64, 'errors': {'battery': 'Could not open device'}}]}
+        with patch.object(arctis, 'read_power', return_value={'online': None, 'battery': None, 'charging': False}), \
+             patch.object(arctis, 'run', return_value=response):
+            backend = arctis.Backend()
+            backend.headset()
+            self.assertIsNone(backend.power['online'])
+            self.assertIsNone(backend.power['battery'])
+            self.assertIsNone(backend.level)
+
+    def test_wheel_attenuates_playback_without_resetting_user_volume(self):
+        backend = arctis.Backend()
+        backend.config['game'], backend.config['chat'] = 40, 75
+        backend.playbacks = {arctis.GAME: 20, arctis.CHAT: 21}
+        backend.level = 96
+        with patch.object(arctis, 'run') as run:
+            backend.apply_volumes()
+            self.assertEqual(run.call_args_list[0].args, ('pactl', 'set-sink-input-volume', '20', '50%'))
+            self.assertEqual(run.call_args_list[1].args, ('pactl', 'set-sink-input-volume', '21', '100%'))
+        self.assertEqual(backend.status()['effectiveGame'], 20)
+        self.assertEqual(backend.status()['effectiveChat'], 75)
+
+    def test_explicit_chat_selection_survives_graph_refresh(self):
+        physical = 'alsa_output.usb-SteelSeries_Arctis_Nova_7X-00.pro-output-0'
+        sinks = [{'index': 1, 'name': physical}, {'index': 2, 'name': arctis.GAME}, {'index': 3, 'name': arctis.CHAT}]
+        streams = [{'index': 10, 'sink': 3, 'properties': {'application.name': '<img src="https://example.invalid/x">'}}]
+        backend = arctis.Backend()
+        backend.physical = physical
+        backend.config['useDefault'] = False
+        backend.config['rules'] = {}
+        calls = []
+        def run(*args, **kwargs):
+            calls.append(args)
+            if args == ('pactl', '-f', 'json', 'list', 'sinks'):
+                return copy.deepcopy(sinks)
+            if args == ('pactl', '-f', 'json', 'list', 'sources'):
+                return []
+            if args == ('pactl', '-f', 'json', 'list', 'sink-inputs'):
+                return copy.deepcopy(streams)
+            if args == ('pactl', 'get-default-sink'):
+                return arctis.GAME
+            return ''
+        with patch.object(arctis, 'run', side_effect=run), patch.object(backend, 'start_loopbacks'):
+            backend.graph()
+            backend.graph()
+        self.assertFalse(any(c[1] == 'move-sink-input' for c in calls))
+        self.assertEqual(backend.apps[0]['channel'], arctis.CHAT)
+        self.assertEqual(backend.apps[0]['name'], streams[0]['properties']['application.name'])
+
+    def test_lost_wheel_read_does_not_raise_attenuated_volume(self):
+        backend = arctis.Backend()
+        backend.playbacks = {arctis.GAME: 20, arctis.CHAT: 21}
+        backend.level = None
+        backend.applied = (100, 0)
+        with patch.object(arctis, 'run') as run:
+            backend.apply_volumes()
+            run.assert_not_called()
+        self.assertEqual(backend.applied, (100, 0))
+
+    def test_bad_config_cannot_inject_commands_or_exceed_volume_bounds(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / 'config.json'
+            config.write_text(json.dumps({'game': 200, 'chat': -4, 'followWheel': 'yes',
+                                          'rules': {'app': '$(touch /tmp/nope)'}}))
+            with patch.object(arctis, 'CONFIG', config):
+                result = arctis.load_config()
+            self.assertEqual(result['game'], 100)
+            self.assertEqual(result['chat'], 100)
+            self.assertEqual(result['rules'], {})
+
+    def test_shell_kill_still_allows_backend_cleanup(self):
+        # Exercise real fork / parent-death signals without opening audio/HID.
+        with tempfile.TemporaryDirectory() as directory:
+            code = '''
+import sys,os
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+import arctis
+root=Path(sys.argv[2])
+arctis.RUNTIME=root
+arctis.SOCKET=root/'test.sock'
+arctis.Backend.headset=lambda self: (root/'backend.pid').write_text(str(os.getpid()))
+arctis.Backend.graph=lambda self: None
+arctis.Backend.apply_volumes=lambda self: None
+arctis.Backend.cleanup=lambda self: (root/'cleaned').write_text('yes')
+sys.argv=['arctis.py','--managed']
+arctis.main()
+'''
+            root = Path(directory)
+            process = subprocess.Popen([sys.executable, '-c', code, str(Path(arctis.__file__).parent), directory],
+                                       stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            try:
+                deadline = time.monotonic() + 5
+                while not (root / 'backend.pid').exists() and time.monotonic() < deadline:
+                    time.sleep(.02)
+                self.assertTrue((root / 'backend.pid').exists())
+                process.kill()
+                process.wait(timeout=3)
+                while not (root / 'cleaned').exists() and time.monotonic() < deadline:
+                    time.sleep(.02)
+                self.assertTrue((root / 'cleaned').exists(), 'Backend must run cleanup after shell kills its proxy')
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                    process.wait(timeout=3)
+                if (root / 'backend.pid').exists():
+                    try:
+                        os.kill(int((root / 'backend.pid').read_text()), signal.SIGTERM)
+                    except ProcessLookupError:
+                        pass
+                process.stderr.close()
+
+    def test_headset_choices_are_independent_and_survive_backend_restart(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(arctis, 'CONFIG', Path(directory) / 'config.json'):
+            backend = arctis.Backend()
+            self.assertIsNone(backend.status()['sidetone'])
+            self.assertIsNone(backend.status()['sleep'])
+            with patch.object(arctis, 'run', return_value={'devices': [{'status': 'success'}]}):
+                backend.command({'action': 'sidetone', 'value': 1})
+                backend.command({'action': 'sleep', 'value': 15})
+            self.assertEqual((backend.status()['sidetone'], backend.status()['sleep']), (1, 15))
+            restarted = arctis.Backend()
+            self.assertEqual((restarted.status()['sidetone'], restarted.status()['sleep']), (1, 15))
+            with patch.object(arctis, 'run', return_value={'devices': [{'status': 'success'}]}):
+                restarted.command({'action': 'sidetone', 'value': 2})
+            self.assertEqual((arctis.load_config()['sidetone'], arctis.load_config()['sleep']), (2, 15))
+
+    def test_failed_headset_command_preserves_saved_choices(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(arctis, 'CONFIG', Path(directory) / 'config.json'):
+            backend = arctis.Backend()
+            backend.config.update(sidetone=1, sleep=15)
+            backend.save()
+            with patch.object(arctis, 'run', return_value={'devices': [{'status': 'error', 'errors': {'sidetone': 'Device offline'}}]}):
+                with self.assertRaises(RuntimeError):
+                    backend.command({'action': 'sidetone', 'value': 3})
+            self.assertEqual((arctis.load_config()['sidetone'], arctis.load_config()['sleep']), (1, 15))
+            self.assertEqual((backend.status()['sidetone'], backend.status()['sleep']), (1, 15))
+
+    def test_invalid_saved_headset_choices_stay_unknown(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / 'config.json'
+            with patch.object(arctis, 'CONFIG', config):
+                for bad in ({'sidetone': 4, 'sleep': -1}, {'sidetone': True, 'sleep': '15'}):
+                    config.write_text(json.dumps(bad))
+                    loaded = arctis.load_config()
+                    self.assertIsNone(loaded['sidetone'])
+                    self.assertIsNone(loaded['sleep'])
+
+    def test_dynamic_text_is_plain_and_shared_tooltip_uses_no_app_names(self):
+        base = Path(__file__).resolve().parents[1]
+        self.assertIn('textFormat: Text.PlainText', (base / 'PlainText.qml').read_text())
+        panel = (base / 'ArctisPanel.qml').read_text()
+        self.assertIn('text: appRow.modelData.name', panel)
+        widget = (base / 'BarWidget.qml').read_text()
+        self.assertIn('tooltipText: strings.t("tooltip").arg(root.powerText())', widget)
+
+    def test_alternate_output_list_excludes_headset_and_virtual_devices(self):
+        sinks = [{'name': 'headset'}, {'name': arctis.GAME}, {'name': arctis.CHAT},
+                 {'name': 'effects', 'properties': {'node.virtual': 'true'}},
+                 {'name': 'speaker', 'description': '<img src="https://example.invalid/x">'},
+                 {'name': 'unplugged', 'active_port': 'jack',
+                  'ports': [{'name': 'jack', 'availability': 'not available'}]}]
+        outputs = arctis.other_outputs(sinks, 'headset')
+        self.assertEqual([o['name'] for o in outputs], ['speaker', 'unplugged'])
+        self.assertTrue(outputs[0]['available'])
+        self.assertFalse(outputs[1]['available'])
+
+    def test_output_destination_tracks_power_and_preserves_unknown_state(self):
+        self.assertEqual(arctis.output_target(False, 'headset', 'speaker', {'speaker'}, 'headset'), 'speaker')
+        self.assertEqual(arctis.output_target(True, 'headset', 'speaker', {'speaker'}, 'speaker'), 'headset')
+        self.assertEqual(arctis.output_target(None, 'headset', 'speaker', {'speaker'}, 'speaker'), 'speaker')
+        self.assertEqual(arctis.output_target(None, 'headset', 'speaker', {'speaker'}, 'headset'), 'headset')
+        self.assertEqual(arctis.output_target(False, 'headset', 'speaker', set(), 'speaker'), 'headset')
+        self.assertEqual(arctis.output_target(False, 'headset', '', {'speaker'}, 'speaker'), 'headset')
+
+    def test_alternate_output_bypasses_cached_wheel_and_restores_it_on_return(self):
+        backend = arctis.Backend()
+        backend.config['fallback'] = 'speaker'
+        backend.output_target = 'speaker'
+        backend.playbacks = {arctis.GAME: 20, arctis.CHAT: 21}
+        backend.level = None
+        backend.applied = (100, 0)
+        with patch.object(arctis, 'run') as run:
+            backend.apply_volumes()
+            self.assertEqual(run.call_args_list[1].args, ('pactl', 'set-sink-input-volume', '21', '100%'))
+            self.assertEqual(backend.applied, (100, 100))
+            backend.output_target = 'headset'
+            backend.level = 0
+            backend.apply_volumes()
+            self.assertEqual(run.call_args_list[-1].args, ('pactl', 'set-sink-input-volume', '21', '0%'))
+
+    def test_alternate_output_choice_is_saved_and_rejects_unavailable_targets(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(arctis, 'CONFIG', Path(directory) / 'config.json'):
+            backend = arctis.Backend()
+            backend.outputs = [{'name': 'speaker', 'available': True}, {'name': 'unplugged', 'available': False}]
+            with patch.object(backend, 'graph'):
+                backend.command({'action': 'fallback', 'value': 'speaker'})
+                self.assertEqual(arctis.load_config()['fallback'], 'speaker')
+                for invalid in ('headset', arctis.GAME, arctis.CHAT, 'unplugged', None):
+                    with self.assertRaises(ValueError):
+                        backend.command({'action': 'fallback', 'value': invalid})
+                self.assertEqual(arctis.load_config()['fallback'], 'speaker')
+                backend.command({'action': 'fallback', 'value': ''})
+                self.assertEqual(arctis.load_config()['fallback'], '')
+
+    def test_routing_moves_only_loopback_playback_between_outputs(self):
+        physical = 'alsa_output.usb-SteelSeries_Arctis_Nova_7X-00.pro-output-0'
+        sinks = [{'index': 1, 'name': physical}, {'index': 2, 'name': arctis.GAME},
+                 {'index': 3, 'name': arctis.CHAT}, {'index': 4, 'name': 'speaker'}]
+        streams = [{'index': 20, 'sink': 1, 'properties': {'application.id': 'omarchy-arctis.game', 'node.name': arctis.GAME + '_playback'}},
+                   {'index': 21, 'sink': 1, 'properties': {'application.id': 'omarchy-arctis.chat', 'node.name': arctis.CHAT + '_playback'}},
+                   {'index': 22, 'sink': 3, 'properties': {'application.id': 'voice'}},
+                   {'index': 23, 'sink': 4, 'properties': {'application.id': 'unrelated'}}]
+        backend = arctis.Backend()
+        backend.physical = physical
+        backend.config.update(fallback='speaker', useDefault=False, rules={})
+        backend.power['online'] = False
+        calls = []
+        def run(*args, **kwargs):
+            calls.append(args)
+            if args == ('pactl', '-f', 'json', 'list', 'sinks'):
+                return copy.deepcopy(sinks)
+            if args == ('pactl', 'get-default-sink'):
+                return arctis.GAME
+            if args == ('pactl', '-f', 'json', 'list', 'sink-inputs'):
+                return copy.deepcopy(streams)
+            return ''
+        with patch.object(arctis, 'run', side_effect=run), patch.object(backend, 'start_loopbacks'):
+            backend.graph()
+            self.assertEqual([c for c in calls if c[1] == 'move-sink-input'],
+                             [('pactl', 'move-sink-input', '20', 'speaker'), ('pactl', 'move-sink-input', '21', 'speaker')])
+            self.assertEqual(backend.apps[0]['channel'], arctis.CHAT)
+            self.assertEqual(len(backend.apps), 1)
+            self.assertTrue(backend.status()['fallbackActive'])
+            calls.clear()
+            for stream in streams[:2]:
+                stream['sink'] = None
+            backend.graph()
+            self.assertFalse(any(c[1] == 'move-sink-input' for c in calls))
+            self.assertFalse(backend.status()['fallbackActive'])
+            calls.clear()
+            backend.power['online'] = True
+            for stream in streams[:2]:
+                stream['sink'] = 4
+            backend.graph()
+            self.assertEqual([c for c in calls if c[1] == 'move-sink-input'],
+                             [('pactl', 'move-sink-input', '20', physical), ('pactl', 'move-sink-input', '21', physical)])
+            self.assertFalse(backend.status()['fallbackActive'])
+
+    def test_disabling_on_alternate_output_restores_playback_there(self):
+        backend = arctis.Backend()
+        backend.config['fallback'] = 'speaker'
+        backend.output_target = 'speaker'
+        backend.original_default = 'headset'
+        def run(*args, **kwargs):
+            if args == ('pactl', 'get-default-sink'):
+                return arctis.GAME
+            if args == ('pactl', '-f', 'json', 'list', 'sinks'):
+                return [{'index': 1, 'name': arctis.GAME}, {'index': 2, 'name': 'speaker'}, {'index': 3, 'name': 'headset'}]
+            if args == ('pactl', '-f', 'json', 'list', 'sink-inputs'):
+                return [{'index': 20, 'sink': 1}]
+            return ''
+        with patch.object(arctis, 'run', side_effect=run) as command:
+            backend.cleanup()
+            self.assertIn(unittest.mock.call('pactl', 'set-default-sink', 'speaker'), command.call_args_list)
+            self.assertIn(unittest.mock.call('pactl', 'move-sink-input', '20', 'speaker'), command.call_args_list)
+
+    def test_restart_resumes_game_default_after_alternate_output_cleanup(self):
+        physical = 'alsa_output.usb-SteelSeries_Arctis_Nova_7X-00.pro-output-0'
+        backend = arctis.Backend()
+        backend.physical = physical
+        backend.config.update(useDefault=True, fallback='speaker')
+        backend.power['online'] = True
+        def run(*args, **kwargs):
+            if args == ('pactl', '-f', 'json', 'list', 'sinks'):
+                return [{'index': 1, 'name': physical}, {'index': 2, 'name': arctis.GAME},
+                        {'index': 3, 'name': arctis.CHAT}, {'index': 4, 'name': 'speaker'}]
+            if args == ('pactl', 'get-default-sink'):
+                return 'speaker'
+            if args == ('pactl', '-f', 'json', 'list', 'sink-inputs'):
+                return []
+            return ''
+        with patch.object(arctis, 'run', side_effect=run) as command, patch.object(backend, 'start_loopbacks'):
+            backend.graph()
+            self.assertIn(unittest.mock.call('pactl', 'set-default-sink', arctis.GAME), command.call_args_list)
+            self.assertTrue(backend.status()['defaultGame'])
+
+
+if __name__ == '__main__':
+    unittest.main()

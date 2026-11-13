@@ -1,0 +1,2 @@
+# Only the Nova 7X control interface; access follows the active desktop seat.
+ACTION!="remove", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="22a5", ENV{ID_USB_INTERFACE_NUM}=="03", TAG+="uaccess"

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "acrogenesis.arctis",
+  "name": "Arctis",
+  "version": "0.1.0",
+  "author": "acrogenesis",
+  "license": "MIT",
+  "description": "Arctis Nova 7X battery, power status and hardware Game/Chat mixing.",
+  "kinds": ["service", "bar-widget"],
+  "entryPoints": {"service": "Service.qml", "barWidget": "BarWidget.qml"},
+  "barWidget": {"displayName": "Arctis", "category": "Audio", "allowMultiple": false, "defaultSection": "right"}
+}
