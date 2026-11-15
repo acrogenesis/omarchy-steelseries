@@ -15,6 +15,40 @@ import arctis
 
 
 class MixTests(unittest.TestCase):
+    def setUp(self):
+        # Existing headset protocol cases assume its USB receiver is present.
+        self.receiver = patch.object(arctis, 'receiver_present', return_value=True)
+        self.receiver.start()
+        self.addCleanup(self.receiver.stop)
+
+    def test_missing_receiver_is_disconnected_and_uses_alternate_output(self):
+        backend = arctis.Backend()
+        backend.power = {'online': True, 'battery': 68, 'charging': False}
+        backend.level = 64
+        backend.control_error = 'Old query failure'
+        with patch.object(arctis, 'receiver_present', return_value=False), patch.object(arctis, 'run') as command:
+            backend.headset()
+            command.assert_not_called()
+        status = backend.status()
+        self.assertIs(status['receiver'], False)
+        self.assertIs(status['online'], False)
+        self.assertIsNone(status['battery'])
+        self.assertIsNone(status['wheel'])
+        self.assertEqual(status['controlError'], '')
+        self.assertEqual(arctis.output_target(status['online'], '', 'speaker', {'speaker'}, ''), 'speaker')
+
+    def test_receiver_presence_is_independent_of_audio_profile_and_recovers(self):
+        backend = arctis.Backend()
+        backend.physical = ''
+        response = {'devices': [{'id_product': '0x22a5', 'battery': {'status': 'BATTERY_AVAILABLE', 'level': 67}, 'chatmix': 64}]}
+        with patch.object(arctis, 'receiver_present', side_effect=[False, True]), patch.object(arctis, 'run', return_value=response):
+            backend.headset()
+            self.assertFalse(backend.status()['receiver'])
+            backend.headset()
+            self.assertTrue(backend.status()['receiver'])
+            self.assertTrue(backend.status()['online'])
+            self.assertEqual(backend.status()['battery'], 67)
+
     def test_hardware_endpoints_and_center(self):
         self.assertEqual(arctis.gains(0), (1, 0))
         self.assertEqual(arctis.gains(64), (1, 1))
@@ -361,6 +395,68 @@ arctis.main()
             backend.graph()
             self.assertIn(unittest.mock.call('pactl', 'set-default-sink', arctis.GAME), command.call_args_list)
             self.assertTrue(backend.status()['defaultGame'])
+
+    def test_alternate_device_volume_reads_live_sink_without_overwriting_trims(self):
+        backend = arctis.Backend()
+        backend.config.update(fallback='speaker', game=60, chat=80)
+        backend.outputs = [{'name': 'speaker', 'available': True}]
+        backend.audio = {'speaker': {'volume': {'left': {'value': 32768}, 'right': {'value': 32768}}}}
+        self.assertEqual(backend.status()['fallbackVolume'], 50)
+        backend.audio['speaker']['volume']['left']['value'] = 0
+        backend.audio['speaker']['volume']['right']['value'] = 0
+        self.assertEqual(backend.status()['fallbackVolume'], 0)
+        self.assertEqual((backend.status()['game'], backend.status()['chat']), (60, 80))
+        backend.outputs[0]['available'] = False
+        self.assertIsNone(backend.status()['fallbackVolume'])
+
+    def test_alternate_volume_only_changes_selected_active_device(self):
+        backend = arctis.Backend()
+        backend.config['fallback'] = 'speaker'
+        backend.routed_target = 'speaker'
+        backend.outputs = [{'name': 'speaker', 'available': True}]
+        backend.power['online'] = False
+        with patch.object(arctis, 'run') as command, patch.object(backend, 'graph') as refresh:
+            backend.command({'action': 'fallbackVolume', 'output': 'speaker', 'value': 45})
+            command.assert_called_once_with('pactl', 'set-sink-volume', 'speaker', '45%')
+            refresh.assert_called_once()
+
+    def test_alternate_volume_rejects_stale_target_inactive_device_and_invalid_values(self):
+        backend = arctis.Backend()
+        backend.config['fallback'] = 'speaker'
+        backend.routed_target = 'speaker'
+        backend.outputs = [{'name': 'speaker', 'available': True}]
+        backend.power['online'] = False
+        with patch.object(arctis, 'run') as command:
+            for value in (-1, 101, True, '50'):
+                with self.assertRaises(ValueError):
+                    backend.command({'action': 'fallbackVolume', 'output': 'speaker', 'value': value})
+            with self.assertRaises(ValueError):
+                backend.command({'action': 'fallbackVolume', 'output': 'headset', 'value': 50})
+            backend.power['online'] = True
+            with self.assertRaises(ValueError):
+                backend.command({'action': 'fallbackVolume', 'output': 'speaker', 'value': 50})
+            backend.power['online'] = False
+            backend.outputs[0]['available'] = False
+            with self.assertRaises(ValueError):
+                backend.command({'action': 'fallbackVolume', 'output': 'speaker', 'value': 50})
+            command.assert_not_called()
+
+
+class ReceiverPresenceTests(unittest.TestCase):
+    def test_usb_identity_detection_and_unavailable_inventory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.assertFalse(arctis.receiver_present(root))
+            interface = root / '1-1:1.3'
+            interface.mkdir()
+            device = root / '1-1'
+            device.mkdir()
+            (device / 'idVendor').write_text('1038\n')
+            (device / 'idProduct').write_text('22a5\n')
+            self.assertTrue(arctis.receiver_present(root))
+            (device / 'idProduct').write_text('9999\n')
+            self.assertFalse(arctis.receiver_present(root))
+            self.assertIsNone(arctis.receiver_present(root / 'missing'))
 
 
 if __name__ == '__main__':

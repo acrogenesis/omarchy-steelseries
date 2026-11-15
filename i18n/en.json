@@ -1,7 +1,9 @@
 {
   "on": "On", "off": "Off", "unknown": "Status unavailable",
+  "receiverDisconnected": "Receiver disconnected", "shortDisconnected": "Disconnected",
   "tooltip": "Arctis Nova 7X · %1",
   "shortBattery": "On · %1%", "shortCharging": "Charging · %1%", "percent": "%1%",
+  "outputVolume": "Output",
   "fallbackLabel": "When headset is off", "hdmiOutput": "HDMI · %1", "shortFallbackActive": "Playing through alternate output",
   "moreSettings": "More settings", "appCount": {"one": "Applications (%1)", "other": "Applications (%1)"},
   "appHelp": "Choose Game or Chat for each playing app.",

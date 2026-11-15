@@ -16,6 +16,7 @@ BarWidget {
   function close() { panel.close() }
   function toggle() { panel.toggle() }
   function powerText() {
+    if (statusModel.receiver === false) return strings.t("shortDisconnected")
     return statusModel.online === true ? strings.t("on") : statusModel.online === false ? strings.t("off") : strings.t("unknown")
   }
   IpcHandler {

@@ -81,7 +81,7 @@ Panel {
               anchors.verticalCenter: parent.verticalCenter
               color: root.foreground
               opacity: 0.75
-              text: root.statusModel.online === true
+              text: root.statusModel.receiver === false ? strings.t("receiverDisconnected") : root.statusModel.online === true
                 ? root.statusModel.battery === null ? strings.t("on")
                   : strings.t(root.statusModel.charging ? "shortCharging" : "shortBattery").arg(root.number(root.statusModel.battery))
                 : root.statusModel.online === false ? strings.t("off") : strings.t("unknown")
@@ -163,6 +163,42 @@ Panel {
             property: "value"
             value: root.statusModel.fallback || ""
             when: !outputPicker.popupOpen
+          }
+          Row {
+            width: parent.width
+            spacing: Style.space(8)
+            visible: !!root.statusModel.fallbackActive && root.statusModel.online !== true
+            PlainText {
+              width: Style.space(48)
+              anchors.verticalCenter: parent.verticalCenter
+              text: strings.t("outputVolume")
+              color: root.foreground
+              wrapMode: Text.NoWrap
+              elide: Text.ElideRight
+            }
+            PanelSlider {
+              width: parent.width - Style.space(48 + 45 + 16)
+              bar: root.bar
+              minimum: 0
+              maximum: 100
+              integer: true
+              step: 5
+              enabled: !!root.statusModel.fallbackAvailable && root.statusModel.fallbackVolume !== null
+                && root.statusModel.fallbackVolume !== undefined
+              value: root.statusModel.fallbackVolume === null || root.statusModel.fallbackVolume === undefined
+                ? 0 : Math.min(100, root.statusModel.fallbackVolume)
+              onReleased: function(value) {
+                root.send({action: "fallbackVolume", output: root.statusModel.fallback, value: Math.round(value)})
+              }
+            }
+            PlainText {
+              width: Style.space(45)
+              anchors.verticalCenter: parent.verticalCenter
+              text: strings.t("percent").arg(root.number(root.statusModel.fallbackVolume))
+              color: root.foreground
+              horizontalAlignment: Text.AlignRight
+              wrapMode: Text.NoWrap
+            }
           }
           PlainText {
             width: parent.width

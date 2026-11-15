@@ -64,7 +64,9 @@ The user-only runtime socket is `$XDG_RUNTIME_DIR/omarchy-arctis.sock`; it accep
 
 The USB receiver stays present when the headset is off. An explicit offline response clears the displayed battery and wheel state. The kernel's cached capacity is ignored when its power status is Unknown; receiver presence alone never means the headset is on.
 
-The compact main panel shows status, Game/Chat volume rows and a **When headset is off** dropdown. **Applications** expands app routing; **More settings** expands wheel-following, sidetone, inactivity and battery alerts. These sections fold again when you close the panel; saved settings remain unchanged.
+An unplugged USB receiver is shown as **Receiver disconnected**, separately from an off headset or an unavailable status query. The selected alternate output remains usable with the receiver unplugged. USB presence is checked independently of the headset's audio profile and HID permissions.
+
+The compact main panel shows status, Game/Chat volume rows and a **When headset is off** dropdown. While the alternate output is active, an **Output** volume row controls that device's actual volume independently of Game/Chat. It follows volume changes made in other mixers; PipeWire owns the device volume. **Applications** expands app routing; **More settings** expands wheel-following, sidetone, inactivity and battery alerts. These sections fold again when you close the panel; saved settings remain unchanged.
 
 Use **When headset is off** to choose your speakers or monitor output. Both virtual outputs route there while the headset is off, preserving application assignments and independent volume trims. The hardware wheel does not attenuate the alternate output. Turn the headset on to resume hardware mixing. A transient unknown power reading keeps an active alternate route; an unavailable selected output is reported without choosing a different device. **Don't switch outputs** disables this behavior. The normal system default can remain Arctis Game; its actual playback destination changes. Disabling the plugin while an alternate output is active moves playback to that output.
 

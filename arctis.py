@@ -66,6 +66,24 @@ def route_for(props, rules):
     return GAME
 
 
+def receiver_present(directory=Path('/sys/bus/usb/devices')):
+    try:
+        devices = list(directory.iterdir())
+    except OSError:
+        return None
+    uncertain = False
+    for device in devices:
+        try:
+            if ((device / 'idVendor').read_text().strip().lower() == '1038'
+                    and (device / 'idProduct').read_text().strip().lower() == '22a5'):
+                return True
+        except PermissionError:
+            uncertain = True
+        except OSError:
+            pass  # USB interfaces have no idVendor/idProduct files.
+    return None if uncertain else False
+
+
 def read_power():
     for path in Path("/sys/class/power_supply").glob("steelseries*1038:22A5*"):
         try:
@@ -105,6 +123,11 @@ def output_target(online, physical, fallback, available, previous):
     if online is None and previous == fallback and fallback and fallback in available:
         return fallback
     return physical
+
+
+def sink_volume(sink):
+    values = [channel['value'] / 65536 * 100 for channel in sink.get('volume', {}).values()]
+    return round(sum(values) / len(values)) if values else None
 
 
 def load_config():
@@ -151,6 +174,7 @@ class Backend:
         self.action_error = ""
         self.control_error = ""
         self.power = read_power()
+        self.receiver = None
         self.last_low = False
         self.last_graph = 0
         self.hsc = shutil.which("headsetcontrol") or str(Path.home() / ".local/lib/omarchy-arctis/headsetcontrol")
@@ -163,6 +187,13 @@ class Backend:
         temporary.replace(CONFIG)
 
     def headset(self):
+        self.receiver = receiver_present()
+        if self.receiver is False:
+            self.power = {'online': False, 'battery': None, 'charging': False}
+            self.level = None
+            self.control_error = ''
+            self.last_low = False
+            return
         self.power = read_power()
         try:
             data = run(self.hsc, "-d", "1038:22a5", "-b", "-m", "-o", "json", json_output=True)
@@ -373,6 +404,19 @@ class Backend:
             self.config['fallback'] = name
             self.save()
             self.graph()
+        elif action == 'fallbackVolume':
+            value = request.get('value')
+            if type(value) is not int or not 0 <= value <= 100:
+                raise ValueError('Volume must be 0-100')
+            name = self.config['fallback']
+            if not name or request.get('output') != name:
+                raise ValueError('The selected output changed')
+            if self.power['online'] is True or self.routed_target != name or not any(
+                o['name'] == name and o['available'] for o in self.outputs
+            ):
+                raise ValueError('Alternate output is not active')
+            run('pactl', 'set-sink-volume', name, f'{value}%')
+            self.graph()
         elif action == "default":
             if GAME not in self.audio:
                 raise ValueError("Game output is not ready")
@@ -416,7 +460,8 @@ class Backend:
         self.apply_volumes()
 
     def status(self):
-        return {**self.power, "receiver": bool(self.physical), "wheel": self.level,
+        fallback_available = any(o['name'] == self.config['fallback'] and o['available'] for o in self.outputs)
+        return {**self.power, "receiver": self.receiver, "wheel": self.level,
                 "wheelAvailable": self.level is not None, "physical": self.physical,
                 "game": self.config["game"], "chat": self.config["chat"],
                 "effectiveGame": round(self.applied[0] * self.config["game"] / 100) if self.applied else None,
@@ -429,7 +474,8 @@ class Backend:
                 "sidetone": self.config["sidetone"], "sleep": self.config["sleep"],
                 "outputs": self.outputs, "fallback": self.config['fallback'],
                 "fallbackActive": bool(self.config['fallback']) and self.routed_target == self.config['fallback'],
-                "fallbackAvailable": any(o['name'] == self.config['fallback'] and o['available'] for o in self.outputs)}
+                "fallbackAvailable": fallback_available,
+                "fallbackVolume": sink_volume(self.audio.get(self.config['fallback'], {})) if fallback_available else None}
 
     def cleanup(self):
         try:
