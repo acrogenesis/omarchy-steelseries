@@ -6,6 +6,7 @@ Arctis Nova 7X (`1038:22a5`) integration for the Omarchy Quattro shell.
 - Two stereo outputs: **Arctis Game** and **Arctis Chat**.
 - Hardware ChatMix wheel balances the two outputs, with both full at center.
 - Separate Game and Chat volume trims; normal volume keys remain usable.
+- All volume sliders apply during dragging (50 ms updates), with the final level applied immediately on release. Pending changes are coalesced to avoid replaying stale volume levels.
 - Remember application assignments; Discord, Vesktop, Zoom and communication-role streams default to Chat.
 - Low battery alert at 20%, optional.
 - Choose another output for Game/Chat while the headset is off; automatically return to the headset when it turns on. The choice is saved, and no output is selected automatically.
@@ -58,6 +59,8 @@ omarchy-shell acrogenesis.arctis status
 python3 arctis.py --command '{"action":"status"}'
 python3 -m unittest discover -s tests -v
 node tests/test_panel.js # optional development check for dropdown label safety
+node tests/test_volume_queue.js
+QT_QPA_PLATFORM=offscreen /usr/lib/qt6/bin/qmltestrunner -input tests/qml
 ```
 
 The user-only runtime socket is `$XDG_RUNTIME_DIR/omarchy-arctis.sock`; it accepts bounded JSON commands. No audio is recorded. A failed HID query shows an error and unknown wheel position; battery can still come from the kernel. It never turns a failed read into a 0% battery reading.

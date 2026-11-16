@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell.Io
+import "CommandQueue.js" as Queue
 
 Item {
   id: root
@@ -13,15 +14,21 @@ Item {
   property bool stopping: false
 
   function request(value) {
-    if (pending.length >= 32) return
-    pending = pending.concat([JSON.stringify(value)])
+    volumes.flush()
+    enqueue(value)
+  }
+  function requestVolume(value, finalValue) {
+    volumes.push(value, finalValue === true)
+  }
+  function enqueue(value) {
+    pending = Queue.enqueue(pending, value)
     dispatch()
   }
   function dispatch() {
     if (operation.running || pending.length === 0) return
     var next = pending[0]
     pending = pending.slice(1)
-    operation.command = ["python3", root.backend, "--command", next]
+    operation.command = ["python3", root.backend, "--command", JSON.stringify(next)]
     operation.running = true
   }
   Process {
@@ -46,6 +53,10 @@ Item {
   Process {
     id: operation
     onExited: Qt.callLater(root.dispatch)
+  }
+  VolumeStream {
+    id: volumes
+    onDispatchRequested: function(request) { root.enqueue(request) }
   }
   Timer { id: retry; interval: 3000; onTriggered: daemon.running = true }
   Timer { interval: 1000; repeat: true; running: true; onTriggered: root.now = Date.now() }

@@ -21,6 +21,7 @@ Panel {
   readonly property int appCount: (statusModel.apps || []).length
   Commons.Translations { id: strings; directory: Qt.resolvedUrl("i18n") }
   function send(value) { if (service) service.request(value) }
+  function sendVolume(value, finalValue) { if (service) service.requestVolume(value, finalValue) }
   function number(value) { return value === null || value === undefined ? "—" : Commons.I18n.formatNumber(value) }
   function switchPanel(direction) {
     return bar && bar.switchPanelFrom ? bar.switchPanelFrom(hostWidget || root, direction) : false
@@ -118,6 +119,7 @@ Panel {
                 elide: Text.ElideRight
               }
               PanelSlider {
+                id: gameVolume
                 width: parent.width - Style.space(48 + 45 + 16)
                 bar: root.bar
                 minimum: 0
@@ -126,14 +128,15 @@ Panel {
                 step: 5
                 enabled: !!root.statusModel.ready
                 value: root.statusModel[volumeRow.modelData] === undefined ? 100 : root.statusModel[volumeRow.modelData]
-                onReleased: function(value) { root.send({action: "volume", channel: volumeRow.modelData, value: Math.round(value)}) }
+                onMoved: function(value) { root.sendVolume({action: "volume", channel: volumeRow.modelData, value: Math.round(value)}, false) }
+                onReleased: function(value) { root.sendVolume({action: "volume", channel: volumeRow.modelData, value: Math.round(value)}, true) }
               }
               PlainText {
                 width: Style.space(45)
                 anchors.verticalCenter: parent.verticalCenter
                 color: root.foreground
                 horizontalAlignment: Text.AlignRight
-                text: strings.t("percent").arg(root.number(root.statusModel[volumeRow.modelData]))
+                text: strings.t("percent").arg(root.number(gameVolume.dragging ? Math.round(gameVolume.liveValue) : root.statusModel[volumeRow.modelData]))
                 wrapMode: Text.NoWrap
               }
             }
@@ -177,6 +180,7 @@ Panel {
               elide: Text.ElideRight
             }
             PanelSlider {
+              id: outputVolume
               width: parent.width - Style.space(48 + 45 + 16)
               bar: root.bar
               minimum: 0
@@ -187,14 +191,17 @@ Panel {
                 && root.statusModel.fallbackVolume !== undefined
               value: root.statusModel.fallbackVolume === null || root.statusModel.fallbackVolume === undefined
                 ? 0 : Math.min(100, root.statusModel.fallbackVolume)
+              onMoved: function(value) {
+                root.sendVolume({action: "fallbackVolume", output: root.statusModel.fallback, value: Math.round(value)}, false)
+              }
               onReleased: function(value) {
-                root.send({action: "fallbackVolume", output: root.statusModel.fallback, value: Math.round(value)})
+                root.sendVolume({action: "fallbackVolume", output: root.statusModel.fallback, value: Math.round(value)}, true)
               }
             }
             PlainText {
               width: Style.space(45)
               anchors.verticalCenter: parent.verticalCenter
-              text: strings.t("percent").arg(root.number(root.statusModel.fallbackVolume))
+              text: strings.t("percent").arg(root.number(outputVolume.dragging ? Math.round(outputVolume.liveValue) : root.statusModel.fallbackVolume))
               color: root.foreground
               horizontalAlignment: Text.AlignRight
               wrapMode: Text.NoWrap
