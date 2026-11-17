@@ -1,0 +1,113 @@
+import QtQuick
+import Quickshell
+import Quickshell.Io
+import qs.Commons as Commons
+import @PLUGIN@ as Plugin
+
+ShellRoot {
+  id: root
+  property int frame: 0
+  property int frameCount: @COUNT@
+  property var heights: []
+  property string output: @OUTPUT@
+
+  QtObject {
+    id: demo
+    property var statusModel: ({})
+    function request(value) {}
+    function requestVolume(value, finalValue) {}
+  }
+  QtObject {
+    id: demoBar
+    property color foreground: "#e8eee5"
+    property color barForeground: foreground
+    property color background: "#151b1d"
+    property color urgent: "#ef826d"
+    property string fontFamily: "CaskaydiaMono Nerd Font"
+  }
+  FloatingWindow {
+    id: window
+    visible: true
+    color: "transparent"
+    implicitWidth: 440
+    implicitHeight: 650
+    Item {
+      id: stage
+      width: 440
+      readonly property var panelItem: {
+        for (var i = 0; i < content.children.length; i++) {
+          if (content.children[i].promoPanel) return content.children[i]
+        }
+        return null
+      }
+      height: panelItem ? panelItem.height : 300
+      Plugin.ArctisPanel { id: content; service: demo; bar: demoBar; width: stage.width }
+    }
+  }
+  function pose(t) {
+    var game = 100, chat = 100
+    if (t >= 3 && t < 9) {
+      var wave = Math.sin((t - 3) * Math.PI / 3)
+      game = Math.round(100 * (1 - Math.max(0, -wave)))
+      chat = Math.round(100 * (1 - Math.max(0, wave)))
+    }
+    if (t >= 9 && t < 12) game = Math.round(76 - 18 * Math.cos((t - 9) * Math.PI * 2 / 3))
+    var offline = t >= 15 && t < 22
+    demo.statusModel = {
+      online: !offline, receiver: true, battery: offline ? null : 58,
+      charging: false, ready: true, defaultGame: true,
+      game: t >= 9 && t < 12 ? game : 100, chat: 100,
+      effectiveGame: game, effectiveChat: chat,
+      wheelAvailable: !offline, followWheel: true,
+      error: "", controlError: "", sidetone: 1, sleep: 15, alerts: true,
+      fallback: "desktop", fallbackAvailable: true, fallbackActive: offline,
+      fallbackVolume: Math.round(45 + (offline ? 12 * Math.sin((t - 15) * Math.PI / 3.5) : 0)),
+      outputs: [{name: "desktop", label: "Desktop speakers", available: true},
+                {name: "hdmi", label: "Digital Stereo (HDMI) [Gaming monitor]", available: true}],
+      apps: t >= 22 && t < 26 ? [
+        {id: 1, key: "game", name: "Your game", channel: "arctis_game"},
+        {id: 2, key: "voice", name: "Voice chat", channel: "arctis_chat"}
+      ] : [], ruleCount: 0
+    }
+    content.moreExpanded = t >= 12 && t < 15
+    content.appsExpanded = t >= 22 && t < 26
+  }
+  function capture() {
+    if (frame >= frameCount) {
+      metadata.command = ["python3", "-c", "import pathlib,sys;pathlib.Path(sys.argv[1]).write_text(sys.argv[2])",
+        output + "/heights.json", JSON.stringify(heights)]
+      metadata.running = true
+      return
+    }
+    pose(frame / 30)
+    Qt.callLater(function() {
+      stage.grabToImage(function(result) {
+        var name = ("00000" + root.frame).slice(-5)
+        if (!result.saveToFile(output + "/" + name + ".png")) {
+          console.error("Could not save preview frame " + name)
+          Qt.quit()
+          return
+        }
+        root.heights.push(stage.height)
+        root.frame++
+        if (root.frame % 150 === 0) console.log("Captured " + root.frame + "/" + root.frameCount)
+        nextFrame.restart()
+      }, Qt.size(stage.width * 2, Math.ceil(stage.height) * 2))
+    })
+  }
+  Process { id: metadata; onExited: Qt.quit() }
+  Timer { id: nextFrame; interval: 1; onTriggered: root.capture() }
+  Timer {
+    interval: 1200
+    running: true
+    onTriggered: {
+      Commons.Style.reduceMotion = true
+      Commons.Color.background = "#151b1d"
+      Commons.Color.foreground = "#e8eee5"
+      Commons.Color.accent = "#c6f777"
+      Commons.Color.shellValues = {"popups.background": "#151b1d", "popups.text": "#e8eee5", "popups.border": "#46524b"}
+      content.open()
+      root.capture()
+    }
+  }
+}
