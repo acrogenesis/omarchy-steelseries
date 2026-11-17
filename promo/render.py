@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render two 30-second promos from isolated captures of the real plugin UI."""
+"""Render a 30-second promo from isolated captures of the real plugin UI."""
 import argparse
 from functools import lru_cache
 import math
@@ -89,7 +89,6 @@ class Film:
         self.frames = frames
         self.vertical = vertical
         self.width, self.height = (1080, 1920) if vertical else (1920, 1080)
-        self.card_height = 0
 
     def frame(self, index):
         t = index / FPS
@@ -150,19 +149,21 @@ class Film:
 
         # Actual plugin component capture, rendered at 2x resolution.
         ui = Image.open(self.frames / f'{index:05}.png').convert('RGBA')
-        target_width = 860 if vertical else 640
+        target_width = 860 if vertical else 590
         cap = 960 if vertical else 790
         target_width = min(target_width, int((cap - 46) * ui.width / ui.height))
         target_height = int(ui.height * target_width / ui.width)
-        if not self.card_height:
-            self.card_height = target_height
-        self.card_height += (target_height - self.card_height) * .28
-        ch = round(self.card_height)
-        pw, ph = target_width + 24, ch + 48
+        pw, ph = target_width + 24, target_height + 48
         x = (w - pw) // 2 if vertical else w - margin - pw
         y = min(760, 1695 - ph) if vertical else int(560 - ph / 2)
         # UI disappears behind the final source card in the portrait cut.
         card_alpha = 1 if not vertical or t < 26 else max(0, 1 - (t - 26) / .6)
+        # Fade fully out around layout changes; never resize or crop a visible UI.
+        for boundary in (12, 15, 22, 26):
+            if boundary - .15 <= t < boundary:
+                card_alpha *= ease((boundary - t) / .15)
+            elif boundary <= t < boundary + .22:
+                card_alpha *= ease((t - boundary) / .22)
         card = Image.new('RGBA', (pw, ph))
         cd = ImageDraw.Draw(card)
         cd.rounded_rectangle((0, 0, pw - 1, ph - 1), radius=16, fill=(24, 31, 32), outline=(72, 92, 72), width=1)
@@ -170,14 +171,14 @@ class Film:
         text(cd, (37, 11), 'PLUGIN PREVIEW', 15, fill=MUTED, face=MONO)
         text(cd, (pw - 18, 13), 'DEMO', 13, fill=MUTED, face=MONO, anchor='ra')
         ui = ui.resize((target_width, target_height), Image.Resampling.LANCZOS)
-        if target_height > ch:
-            ui = ui.crop((0, 0, target_width, ch))
         card.alpha_composite(ui, (12, 36))
         reveal = ease(t / .8) * card_alpha
         if reveal < 1:
             card.putalpha(card.getchannel('A').point(lambda p: int(p * reveal)))
         if reveal > 0:
-            image.alpha_composite(shadow(pw, ph), (x - 60, y - 45))
+            shade = shadow(pw, ph).copy()
+            shade.putalpha(shade.getchannel('A').point(lambda p: int(p * reveal)))
+            image.alpha_composite(shade, (x - 60, y - 45))
             image.alpha_composite(card, (x, y + int((1 - ease(t / .8)) * 36)))
 
         draw = ImageDraw.Draw(image)
@@ -244,18 +245,24 @@ def music(output):
         envelope = np.minimum(1, tt / .18) * np.minimum(1, (4.2 - tt) / .65)
         for i, note in enumerate(chord):
             sound = np.sin(2*np.pi*hz(note)*tt + .07*np.sin(2*np.pi*.4*tt)) * envelope
-            add(at, sound, .025, (i-1.5)/3)
+            add(at, sound, .04, (i-1.5)/3)
     for beat, at in enumerate(np.arange(0, SECONDS, .5)):
         chord = chords[int(at / 4) % 4]
         tt = np.arange(int(rate * .42)) / rate
-        bass = np.sin(2*np.pi*hz(chord[0]-24)*tt) * np.exp(-tt*7) * np.minimum(1, tt/.012)
+        frequency = hz(chord[0]-24)
+        bass = (np.sin(2*np.pi*frequency*tt) + .35*np.sin(4*np.pi*frequency*tt)
+                + .18*np.sin(6*np.pi*frequency*tt)) * np.exp(-tt*7) * np.minimum(1, tt/.012)
         add(at, bass, .15)
         if beat % 2 == 0:
             kick = np.sin(2*np.pi*(47*tt+2.8*(1-np.exp(-tt*27)))) * np.exp(-tt*18)
             add(at, kick, .22)
         note = chord[(beat * 3) % 4] + 12
         pluck = (np.sin(2*np.pi*hz(note)*tt)+.22*np.sin(4*np.pi*hz(note)*tt)) * np.exp(-tt*12) * np.minimum(1, tt/.006)
-        add(at + .25, pluck, .035, .45 if beat % 2 else -.45)
+        add(at + .25, pluck, .1, .35 if beat % 2 else -.35)
+        if beat % 2:
+            snare = rng.normal(0, 1, len(tt)) * np.exp(-tt*35) * np.minimum(1, tt/.002)
+            snare += .3*np.sin(2*np.pi*185*tt) * np.exp(-tt*24)
+            add(at, snare, .055)
         noise = rng.normal(0, 1, int(rate*.055))
         noise = np.diff(noise, prepend=0) * np.exp(-np.arange(len(noise))/rate*90)
         add(at + .25, noise, .012, -.2 if beat % 2 else .2)
@@ -278,29 +285,31 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('frames', type=Path)
     parser.add_argument('output', type=Path)
-    parser.add_argument('--format', choices=('both', 'landscape', 'vertical'), default='both')
+    parser.add_argument('--format', choices=('both', 'landscape', 'vertical'), default='landscape')
+    parser.add_argument('--suffix', default='', help='Optional export suffix, such as -v2')
     parser.add_argument('--stills', action='store_true')
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     formats = ('landscape', 'vertical') if args.format == 'both' else (args.format,)
+    score = args.output / f'original-score{args.suffix}.wav'
     if not args.stills:
-        music(args.output / 'original-score.wav')
+        music(score)
     for name in formats:
         film = Film(args.frames, name == 'vertical')
         if args.stills:
             for second in (1.8, 6.3, 13.1, 18.5, 23.5, 28):
-                film.card_height = 0
                 film.frame(round(second*FPS)).save(args.output / f'{name}-{second:.1f}.png')
             print(f'{name} storyboard saved', flush=True)
             continue
-        target = args.output / f'arctis-promo-{name}-30s.mp4'
+        target = args.output / f'arctis-promo-{name}-30s{args.suffix}.mp4'
         command = ['ffmpeg', '-hide_banner', '-loglevel', 'warning', '-y', '-f', 'rawvideo', '-pix_fmt', 'rgb24',
                    '-s', f'{film.width}x{film.height}', '-r', str(FPS), '-i', 'pipe:0',
-                   '-i', str(args.output / 'original-score.wav'), '-map', '0:v', '-map', '1:a',
+                   '-i', str(score), '-map', '0:v', '-map', '1:a',
                    '-vf', 'scale=out_color_matrix=bt709:out_range=tv',
                    '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-threads', '6', '-pix_fmt', 'yuv420p',
                    '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv',
-                   '-c:a', 'aac', '-b:a', '192k', '-af', 'loudnorm=I=-18:TP=-1.5:LRA=7', '-ar', '48000',
+                   '-c:a', 'aac', '-b:a', '192k', '-af', 'loudnorm=I=-14:TP=-1.5:LRA=7', '-ar', '48000',
+                   '-metadata:s:a:0', 'title=Original music', '-disposition:a:0', 'default',
                    '-t', str(SECONDS), '-movflags', '+faststart', str(target)]
         process = subprocess.Popen(command, stdin=subprocess.PIPE)
         try:

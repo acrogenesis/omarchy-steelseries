@@ -80,23 +80,26 @@ ShellRoot {
       return
     }
     pose(frame / 30)
-    Qt.callLater(function() {
-      stage.grabToImage(function(result) {
-        var name = ("00000" + root.frame).slice(-5)
-        if (!result.saveToFile(output + "/" + name + ".png")) {
-          console.error("Could not save preview frame " + name)
-          Qt.quit()
-          return
-        }
-        root.heights.push(stage.height)
-        root.frame++
-        if (root.frame % 150 === 0) console.log("Captured " + root.frame + "/" + root.frameCount)
-        nextFrame.restart()
-      }, Qt.size(stage.width * 2, Math.ceil(stage.height) * 2))
-    })
+    // Let the native controls finish their layout before choosing grab dimensions.
+    settleFrame.restart()
+  }
+  function grabFrame() {
+    stage.grabToImage(function(result) {
+      var name = ("00000" + root.frame).slice(-5)
+      if (!result.saveToFile(output + "/" + name + ".png")) {
+        console.error("Could not save preview frame " + name)
+        Qt.quit()
+        return
+      }
+      root.heights.push(stage.height)
+      root.frame++
+      if (root.frame % 150 === 0) console.log("Captured " + root.frame + "/" + root.frameCount)
+      nextFrame.restart()
+    }, Qt.size(stage.width * 2, Math.ceil(stage.height) * 2))
   }
   Process { id: metadata; onExited: Qt.quit() }
   Timer { id: nextFrame; interval: 1; onTriggered: root.capture() }
+  Timer { id: settleFrame; interval: 32; onTriggered: root.grabFrame() }
   Timer {
     interval: 1200
     running: true
