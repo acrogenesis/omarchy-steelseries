@@ -109,18 +109,17 @@ class Film:
         labels = ImageDraw.Draw(copy)
         tx, ty = margin, 267 if vertical else 286
         text(labels, (tx, ty - 62), eyebrow, 20, fill=LIME, face=MONO)
-        hero_size = 101 if vertical else 96
+        hero_size = 101 if vertical else 78
         for i, line in enumerate(title):
             lift = int(32 * (1 - ease((since - i * .055) / .45)))
             text(labels, (tx, ty + i * int(hero_size * 1.18) + lift), line,
                  hero_size, fill=WHITE if i == 0 else LIME)
         sy = ty + int(hero_size * 2.6)
-        for i, line in enumerate(wrap(labels, subtitle, 28, 900 if vertical else 850)):
+        for i, line in enumerate(wrap(labels, subtitle, 28, 900 if vertical else 720)):
             text(labels, (tx + 3, sy + i * 42), line, 28, fill=WHITE, face=REGULAR)
 
         if not vertical and scene_index == 1:
-            phase = math.sin((t - 3) * math.pi / 3)
-            self.levels(labels, tx, 720, 700, min(1, 1 + min(0, phase)), min(1, 1 - max(0, phase)))
+            self.feature(labels, tx, 738, 'TURN THE HEADSET WHEEL', 'Watch the balance inside the plugin')
         elif not vertical and scene_index == 2:
             self.feature(labels, tx, 738, 'LIVE VOLUME', 'Changes while you drag')
             self.feature(labels, tx, 837, 'SIDETONE + IDLE TIMER', 'Set it once. Keep it yours.')
@@ -135,9 +134,6 @@ class Film:
             url = ['github.com/acrogenesis/', 'omarchy-arctis'] if vertical else ['github.com/acrogenesis/omarchy-arctis']
             for i, line in enumerate(url):
                 text(labels, (tx, cta_y + 42 + i * 39), line, 28 if vertical else 25, face=MONO)
-        if vertical and scene_index == 1:
-            self.levels(labels, tx, 1530, w - margin * 2, min(1, 1 + min(0, math.sin((t-3)*math.pi/3))),
-                        min(1, 1 - max(0, math.sin((t-3)*math.pi/3))))
         if vertical and scene_index == 3:
             self.switch(labels, tx, 1545, w - margin * 2, since)
         if vertical and scene_index == 5:
@@ -149,7 +145,11 @@ class Film:
 
         # Actual plugin component capture, rendered at 2x resolution.
         ui = Image.open(self.frames / f'{index:05}.png').convert('RGBA')
-        target_width = 860 if vertical else 590
+        settings_closeup = not vertical and 12 <= t < 15
+        if settings_closeup:
+            # A fixed close-up of the real settings controls, revealed after the fade.
+            ui = ui.crop((0, round(ui.width * 204 / 440), ui.width, ui.height))
+        target_width = 860 if vertical else 880
         cap = 960 if vertical else 790
         target_width = min(target_width, int((cap - 46) * ui.width / ui.height))
         target_height = int(ui.height * target_width / ui.width)
@@ -168,7 +168,8 @@ class Film:
         cd = ImageDraw.Draw(card)
         cd.rounded_rectangle((0, 0, pw - 1, ph - 1), radius=16, fill=(24, 31, 32), outline=(72, 92, 72), width=1)
         cd.ellipse((18, 17, 25, 24), fill=LIME)
-        text(cd, (37, 11), 'PLUGIN PREVIEW', 15, fill=MUTED, face=MONO)
+        text(cd, (37, 11), 'PLUGIN / SETTINGS CLOSE-UP' if settings_closeup else 'PLUGIN PREVIEW',
+             15, fill=MUTED, face=MONO)
         text(cd, (pw - 18, 13), 'DEMO', 13, fill=MUTED, face=MONO, anchor='ra')
         ui = ui.resize((target_width, target_height), Image.Resampling.LANCZOS)
         card.alpha_composite(ui, (12, 36))
@@ -200,18 +201,6 @@ class Film:
         text(draw, (x + 52, y + 32), description, 24, fill=MUTED, face=REGULAR)
 
     @staticmethod
-    def levels(draw, x, y, width, game, chat):
-        for i, (name, value) in enumerate((('GAME', game), ('CHAT', chat))):
-            yy = y + i * 66
-            text(draw, (x, yy), name, 19, fill=MUTED, face=MONO)
-            left = x + 90
-            right = x + width - 60
-            draw.rounded_rectangle((left, yy + 9, right, yy + 18), radius=4, fill=(49, 61, 51))
-            end = left + (right - left) * value
-            draw.rounded_rectangle((left, yy + 9, max(left + 1, end), yy + 18), radius=4, fill=LIME)
-            text(draw, (x + width, yy), f'{round(value*100)}%', 19, fill=WHITE, face=MONO, anchor='ra')
-
-    @staticmethod
     def switch(draw, x, y, width, elapsed):
         headphones(draw, x + 18, y, 50, color=MUTED)
         left, right = x + 110, x + width - 110
@@ -235,8 +224,11 @@ def music(output):
         start = round(at * rate)
         count = min(len(sound), len(audio) - start)
         if count > 0:
-            audio[start:start+count, 0] += sound[:count] * volume * math.sqrt((1-pan)/2)
-            audio[start:start+count, 1] += sound[:count] * volume * math.sqrt((1+pan)/2)
+            balance = np.asarray(pan)
+            if balance.ndim:
+                balance = balance[:count]
+            audio[start:start+count, 0] += sound[:count] * volume * np.sqrt((1-balance)/2)
+            audio[start:start+count, 1] += sound[:count] * volume * np.sqrt((1+balance)/2)
     def hz(note):
         return 440 * 2 ** ((note - 69) / 12)
     for at in np.arange(0, SECONDS, 4):
@@ -258,7 +250,13 @@ def music(output):
             add(at, kick, .22)
         note = chord[(beat * 3) % 4] + 12
         pluck = (np.sin(2*np.pi*hz(note)*tt)+.22*np.sin(4*np.pi*hz(note)*tt)) * np.exp(-tt*12) * np.minimum(1, tt/.006)
-        add(at + .25, pluck, .1, .35 if beat % 2 else -.35)
+        lead_at = at + .25
+        if 3 <= lead_at < 9:
+            # Move the melodic foreground left to right; keep bass/drums centered.
+            position = np.clip((lead_at + tt - 3) / 6, 0, 1)
+            add(lead_at, pluck, .17, -.95*np.cos(np.pi*position))
+        else:
+            add(lead_at, pluck, .1, .35 if beat % 2 else -.35)
         if beat % 2:
             snare = rng.normal(0, 1, len(tt)) * np.exp(-tt*35) * np.minimum(1, tt/.002)
             snare += .3*np.sin(2*np.pi*185*tt) * np.exp(-tt*24)
