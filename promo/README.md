@@ -16,8 +16,10 @@ The real plugin takes the right half of the landscape frame at 880 pixels
 wide. The ChatMix scene shows the plugin's own balance readout; there are
 no duplicate Game/Chat bars outside it. The preview stays at the same
 position and size throughout the landscape film.
-Longer settings scroll within the plugin's own Flickable, inside a fixed
-capture-only viewport. A visible cursor accompanies volume adjustments.
+The capture-only viewport is wide enough to show the complete expanded
+settings panel and its title at once. It never scrolls. Capture stops with
+an error if any native content would overflow. A visible cursor accompanies
+volume adjustments.
 Caption changes use clean cuts; the preview never fades out between scenes.
 During seconds 3–9, the soundtrack's melodic foreground sweeps smoothly
 from left to right using equal-power panning; bass and drums stay centered.
@@ -46,7 +48,7 @@ From the repository root:
 promo_dir="$HOME/Videos/Arctis Promo"
 python3 promo/capture.py "$promo_dir/build/ui"
 python3 promo/render.py "$promo_dir/build/ui" "$promo_dir/review" --stills
-python3 promo/render.py "$promo_dir/build/ui" "$promo_dir" --suffix=-v4
+python3 promo/render.py "$promo_dir/build/ui" "$promo_dir" --suffix=-v5
 ```
 
 Use `--format both` or `--format vertical` for additional formats. The
@@ -59,8 +61,9 @@ Build files and videos stay outside the repository.
 preview uses links to the installed shell's shared controls and an isolated
 wrapper instead of its real layer-shell window. The plugin source itself
 is left unchanged. Each capture waits for native layout to settle before
-measuring its dimensions. All 900 captures use the same 440x365 logical
-viewport (880x730 pixels). No per-scene crop, zoom, or panel repositioning
+measuring its dimensions. All 900 captures use the same 660x550 logical
+viewport (1320x1100 pixels), composed at 880 pixels wide in landscape.
+No per-scene crop, zoom, scrolling, or panel repositioning
 is applied. The only full-frame fades are at the beginning and end.
 
 ## Validation

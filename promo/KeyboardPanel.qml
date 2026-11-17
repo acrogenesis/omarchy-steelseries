@@ -11,13 +11,13 @@ Item {
   property var bar: null
   property var focusTarget: null
   property bool open: false
-  property int contentWidth: 440
+  property int contentWidth: 660
   property int contentHeight: 300
   default property alias contentItem: contentHolder.data
   width: contentWidth
-  // Fixed filming viewport. The plugin's own Flickable handles longer content.
-  height: 365
-  function fittedContentWidth(value) { return value }
+  // A wider filming viewport fits the complete settings panel without scrolling.
+  height: 550
+  function fittedContentWidth(value) { return 660 }
   function fittedContentHeight(value, cap) { return Math.min(value + 28, cap) }
   property Item backdrop: Rectangle {
     parent: root

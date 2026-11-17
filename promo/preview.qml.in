@@ -30,11 +30,11 @@ ShellRoot {
     id: window
     visible: true
     color: "transparent"
-    implicitWidth: 440
+    implicitWidth: 660
     implicitHeight: 650
     Item {
       id: stage
-      width: 440
+      width: 660
       readonly property var panelItem: {
         for (var i = 0; i < content.children.length; i++) {
           if (content.children[i].promoPanel) return content.children[i]
@@ -107,8 +107,13 @@ ShellRoot {
     }, viewports)
     if (viewports.length) {
       var viewport = viewports[0]
-      var progress = smooth((time - 12.1) / .65) * (1 - smooth((time - 14.45) / .5))
-      viewport.contentY = content.moreExpanded ? Math.max(0, viewport.contentHeight - viewport.height) * progress : 0
+      viewport.contentY = 0
+      if (viewport.contentHeight > viewport.height + 1) {
+        console.error("Preview content would be clipped at frame " + frame
+          + ": " + viewport.contentHeight + " > " + viewport.height)
+        Qt.quit()
+        return
+      }
     }
     var sliders = []
     descendants(content, function(item) {
