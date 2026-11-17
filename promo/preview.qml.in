@@ -10,6 +10,7 @@ ShellRoot {
   property int frameCount: @COUNT@
   property var heights: []
   property string output: @OUTPUT@
+  property real time: 0
 
   QtObject {
     id: demo
@@ -42,26 +43,44 @@ ShellRoot {
       }
       height: panelItem ? panelItem.height : 300
       Plugin.ArctisPanel { id: content; service: demo; bar: demoBar; width: stage.width }
+      Canvas {
+        id: pointer
+        z: 100
+        width: 26
+        height: 35
+        visible: false
+        onPaint: {
+          var ctx = getContext("2d")
+          ctx.clearRect(0, 0, width, height)
+          ctx.beginPath()
+          ctx.moveTo(2, 2); ctx.lineTo(2, 26); ctx.lineTo(9, 20)
+          ctx.lineTo(15, 32); ctx.lineTo(20, 29); ctx.lineTo(14, 18)
+          ctx.lineTo(24, 18); ctx.closePath()
+          ctx.fillStyle = "#c6f777"; ctx.fill()
+          ctx.strokeStyle = "#151b1d"; ctx.lineWidth = 2; ctx.stroke()
+        }
+      }
     }
   }
   function pose(t) {
-    var game = 100, chat = 100
+    root.time = t
+    var gameVolume = Math.round(100 - 38 * smooth((t - 9.4) / 1.4))
+    var game = gameVolume, chat = 100
     if (t >= 3 && t < 9) {
       var wave = Math.sin((t - 3) * Math.PI / 3)
       game = Math.round(100 * (1 - Math.max(0, -wave)))
       chat = Math.round(100 * (1 - Math.max(0, wave)))
     }
-    if (t >= 9 && t < 12) game = Math.round(76 - 18 * Math.cos((t - 9) * Math.PI * 2 / 3))
     var offline = t >= 15 && t < 22
     demo.statusModel = {
       online: !offline, receiver: true, battery: offline ? null : 58,
       charging: false, ready: true, defaultGame: true,
-      game: t >= 9 && t < 12 ? game : 100, chat: 100,
+      game: gameVolume, chat: 100,
       effectiveGame: game, effectiveChat: chat,
       wheelAvailable: !offline, followWheel: true,
       error: "", controlError: "", sidetone: 1, sleep: 15, alerts: true,
       fallback: "desktop", fallbackAvailable: true, fallbackActive: offline,
-      fallbackVolume: Math.round(45 + (offline ? 12 * Math.sin((t - 15) * Math.PI / 3.5) : 0)),
+      fallbackVolume: Math.round(45 + 15 * smooth((t - 17) / 1.8)),
       outputs: [{name: "desktop", label: "Desktop speakers", available: true},
                 {name: "hdmi", label: "Digital Stereo (HDMI) [Gaming monitor]", available: true}],
       apps: t >= 22 && t < 26 ? [
@@ -71,6 +90,41 @@ ShellRoot {
     }
     content.moreExpanded = t >= 12 && t < 15
     content.appsExpanded = t >= 22 && t < 26
+  }
+  function smooth(value) {
+    var x = Math.max(0, Math.min(1, value))
+    return x * x * (3 - 2 * x)
+  }
+  function descendants(item, predicate, result) {
+    if (predicate(item)) result.push(item)
+    for (var i = 0; i < item.children.length; i++)
+      descendants(item.children[i], predicate, result)
+  }
+  function prepareViewport() {
+    var viewports = []
+    descendants(content, function(item) {
+      return item.contentY !== undefined && item.flickableDirection !== undefined
+    }, viewports)
+    if (viewports.length) {
+      var viewport = viewports[0]
+      var progress = smooth((time - 12.1) / .65) * (1 - smooth((time - 14.45) / .5))
+      viewport.contentY = content.moreExpanded ? Math.max(0, viewport.contentHeight - viewport.height) * progress : 0
+    }
+    var sliders = []
+    descendants(content, function(item) {
+      return item.minimum === 0 && item.maximum === 100 && item.liveValue !== undefined
+    }, sliders)
+    var slider = time >= 9.2 && time < 11.2 ? sliders[0]
+      : time >= 16.8 && time < 19.2 ? sliders[2] : null
+    pointer.visible = !!slider
+    if (slider) {
+      var point = slider.mapToItem(stage, Math.max(0, Math.min(slider.width - slider.knobSize,
+        slider.width * slider.progress - slider.knobSize / 2)) + slider.knobSize / 2, slider.height / 2)
+      pointer.x = point.x + 2
+      pointer.y = point.y + 2
+      pointer.requestPaint()
+    }
+    paintFrame.restart()
   }
   function capture() {
     if (frame >= frameCount) {
@@ -99,7 +153,8 @@ ShellRoot {
   }
   Process { id: metadata; onExited: Qt.quit() }
   Timer { id: nextFrame; interval: 1; onTriggered: root.capture() }
-  Timer { id: settleFrame; interval: 32; onTriggered: root.grabFrame() }
+  Timer { id: settleFrame; interval: 32; onTriggered: root.prepareViewport() }
+  Timer { id: paintFrame; interval: 16; onTriggered: root.grabFrame() }
   Timer {
     interval: 1200
     running: true

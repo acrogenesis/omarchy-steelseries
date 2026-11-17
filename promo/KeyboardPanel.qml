@@ -15,7 +15,8 @@ Item {
   property int contentHeight: 300
   default property alias contentItem: contentHolder.data
   width: contentWidth
-  height: contentHeight
+  // Fixed filming viewport. The plugin's own Flickable handles longer content.
+  height: 365
   function fittedContentWidth(value) { return value }
   function fittedContentHeight(value, cap) { return Math.min(value + 28, cap) }
   property Item backdrop: Rectangle {

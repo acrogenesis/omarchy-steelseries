@@ -104,15 +104,13 @@ class Film:
         scene_index, scene = next((i, s) for i, s in enumerate(SCENES) if s[0] <= t < s[1])
         start, end, eyebrow, title, subtitle = scene
         since = t - start
-        alpha = ease(since / .4) * min(1, max(0, (end - t) / .18))
         copy = Image.new('RGBA', (w, h))
         labels = ImageDraw.Draw(copy)
         tx, ty = margin, 267 if vertical else 286
         text(labels, (tx, ty - 62), eyebrow, 20, fill=LIME, face=MONO)
         hero_size = 101 if vertical else 78
         for i, line in enumerate(title):
-            lift = int(32 * (1 - ease((since - i * .055) / .45)))
-            text(labels, (tx, ty + i * int(hero_size * 1.18) + lift), line,
+            text(labels, (tx, ty + i * int(hero_size * 1.18)), line,
                  hero_size, fill=WHITE if i == 0 else LIME)
         sy = ty + int(hero_size * 2.6)
         for i, line in enumerate(wrap(labels, subtitle, 28, 900 if vertical else 720)):
@@ -139,16 +137,10 @@ class Film:
         if vertical and scene_index == 5:
             headphones(labels, w / 2 - 135, 910, 270, width=15)
             text(labels, (w / 2, 1260), 'NATIVE. LOCAL. YOURS.', 25, fill=MUTED, face=MONO, anchor='ma')
-        if alpha < 1:
-            copy.putalpha(copy.getchannel('A').point(lambda p: int(p * alpha)))
         image.alpha_composite(copy)
 
         # Actual plugin component capture, rendered at 2x resolution.
         ui = Image.open(self.frames / f'{index:05}.png').convert('RGBA')
-        settings_closeup = not vertical and 12 <= t < 15
-        if settings_closeup:
-            # A fixed close-up of the real settings controls, revealed after the fade.
-            ui = ui.crop((0, round(ui.width * 204 / 440), ui.width, ui.height))
         target_width = 860 if vertical else 880
         cap = 960 if vertical else 790
         target_width = min(target_width, int((cap - 46) * ui.width / ui.height))
@@ -156,31 +148,17 @@ class Film:
         pw, ph = target_width + 24, target_height + 48
         x = (w - pw) // 2 if vertical else w - margin - pw
         y = min(760, 1695 - ph) if vertical else int(560 - ph / 2)
-        # UI disappears behind the final source card in the portrait cut.
-        card_alpha = 1 if not vertical or t < 26 else max(0, 1 - (t - 26) / .6)
-        # Fade fully out around layout changes; never resize or crop a visible UI.
-        for boundary in (12, 15, 22, 26):
-            if boundary - .15 <= t < boundary:
-                card_alpha *= ease((boundary - t) / .15)
-            elif boundary <= t < boundary + .22:
-                card_alpha *= ease((t - boundary) / .22)
         card = Image.new('RGBA', (pw, ph))
         cd = ImageDraw.Draw(card)
         cd.rounded_rectangle((0, 0, pw - 1, ph - 1), radius=16, fill=(24, 31, 32), outline=(72, 92, 72), width=1)
         cd.ellipse((18, 17, 25, 24), fill=LIME)
-        text(cd, (37, 11), 'PLUGIN / SETTINGS CLOSE-UP' if settings_closeup else 'PLUGIN PREVIEW',
-             15, fill=MUTED, face=MONO)
+        text(cd, (37, 11), 'PLUGIN PREVIEW', 15, fill=MUTED, face=MONO)
         text(cd, (pw - 18, 13), 'DEMO', 13, fill=MUTED, face=MONO, anchor='ra')
         ui = ui.resize((target_width, target_height), Image.Resampling.LANCZOS)
         card.alpha_composite(ui, (12, 36))
-        reveal = ease(t / .8) * card_alpha
-        if reveal < 1:
-            card.putalpha(card.getchannel('A').point(lambda p: int(p * reveal)))
-        if reveal > 0:
-            shade = shadow(pw, ph).copy()
-            shade.putalpha(shade.getchannel('A').point(lambda p: int(p * reveal)))
-            image.alpha_composite(shade, (x - 60, y - 45))
-            image.alpha_composite(card, (x, y + int((1 - ease(t / .8)) * 36)))
+        if not vertical or scene_index != 5:
+            image.alpha_composite(shadow(pw, ph), (x - 60, y - 45))
+            image.alpha_composite(card, (x, y))
 
         draw = ImageDraw.Draw(image)
         footer_y = h - 96
