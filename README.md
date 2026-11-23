@@ -1,4 +1,4 @@
-# Arctis for Omarchy
+# SteelSeries Headsets for Omarchy
 
 SteelSeries USB headset integration for the Omarchy Quattro shell. The plugin
 uses HeadsetControl to detect the model and its available controls. The Arctis
@@ -50,6 +50,9 @@ sudo udevadm control --reload-rules
 Reconnect the receiver, or trigger a change event for its control hidraw node to apply without reconnecting. The plugin never runs as root.
 
 ## Install locally
+
+The plugin uses the ID `acrogenesis.arctis` so existing bar layouts and
+saved audio routes carry over.
 
 Copy this directory to `~/.config/omarchy/plugins/acrogenesis.arctis`, then:
 

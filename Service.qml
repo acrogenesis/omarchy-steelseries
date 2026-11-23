@@ -9,7 +9,7 @@ Item {
   property double lastUpdate: 0
   property double now: Date.now()
   readonly property bool fresh: lastUpdate > 0 && now - lastUpdate < 7000
-  readonly property var statusModel: fresh ? snapshot : ({error: "Arctis service unavailable"})
+  readonly property var statusModel: fresh ? snapshot : ({error: "SteelSeries headset service unavailable"})
   property var pending: []
   property bool stopping: false
 
@@ -45,7 +45,7 @@ Item {
             root.lastUpdate = Date.now()
             root.now = Date.now()
           }
-        } catch (e) { console.warn("Arctis: invalid status") }
+        } catch (e) { console.warn("SteelSeries Headsets: invalid status") }
       }
     }
     onExited: if (!root.stopping) retry.restart()

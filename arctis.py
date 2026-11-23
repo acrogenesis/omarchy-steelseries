@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Omarchy Arctis backend. Python stdlib + PipeWire tools + HeadsetControl."""
+"""SteelSeries Headsets backend for Omarchy."""
 import argparse
 from collections import Counter
 import ctypes
@@ -351,8 +351,8 @@ class Backend:
             self.control_error = str(exc)[:300]
         low = self.power["online"] is True and self.power["battery"] is not None and self.power["battery"] <= 20
         if low and not self.last_low and self.config["alerts"] and shutil.which("notify-send"):
-            subprocess.Popen(["notify-send", "--app-name=Arctis", "--icon=audio-headphones",
-                              "Arctis battery low", f"Battery: {self.power['battery']}%"],
+            subprocess.Popen(["notify-send", "--app-name=SteelSeries Headsets", "--icon=audio-headphones",
+                              "Headset battery low", f"Battery: {self.power['battery']}%"],
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.last_low = low
 

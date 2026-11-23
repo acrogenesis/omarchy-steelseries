@@ -2,7 +2,7 @@
   "on": "On", "off": "Off", "unknown": "Status unavailable",
   "receiverDisconnected": "Receiver disconnected", "shortDisconnected": "Disconnected",
   "headset": "SteelSeries headset", "usbConnected": "USB connected",
-  "tooltip": "Arctis · %1",
+  "tooltip": "SteelSeries Headsets · %1",
   "shortBattery": "On · %1%", "shortCharging": "Charging · %1%", "percent": "%1%",
   "outputVolume": "Output",
   "fallbackLabel": "When headset is off", "hdmiOutput": "HDMI · %1", "shortFallbackActive": "Playing through alternate output",
