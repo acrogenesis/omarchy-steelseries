@@ -1,7 +1,8 @@
 {
   "on": "On", "off": "Off", "unknown": "Status unavailable",
   "receiverDisconnected": "Receiver disconnected", "shortDisconnected": "Disconnected",
-  "tooltip": "Arctis Nova 7X · %1",
+  "headset": "SteelSeries headset", "usbConnected": "USB connected",
+  "tooltip": "Arctis · %1",
   "shortBattery": "On · %1%", "shortCharging": "Charging · %1%", "percent": "%1%",
   "outputVolume": "Output",
   "fallbackLabel": "When headset is off", "hdmiOutput": "HDMI · %1", "shortFallbackActive": "Playing through alternate output",

@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "author": "acrogenesis",
   "license": "MIT",
-  "description": "Arctis Nova 7X battery, power status and hardware Game/Chat mixing.",
+  "description": "Battery, headset settings and Game/Chat audio for supported SteelSeries USB headsets.",
   "kinds": ["service", "bar-widget"],
   "entryPoints": {"service": "Service.qml", "barWidget": "BarWidget.qml"},
   "barWidget": {"displayName": "Arctis", "category": "Audio", "allowMultiple": false, "defaultSection": "right"}

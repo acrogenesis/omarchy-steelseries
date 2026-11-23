@@ -73,6 +73,8 @@ ShellRoot {
     }
     var offline = t >= 15 && t < 22
     demo.statusModel = {
+      headsetName: "Arctis Nova 7X", supportsBattery: true, supportsWheel: true,
+      supportsSidetone: true, supportsSleep: true,
       online: !offline, receiver: true, battery: offline ? null : 58,
       charging: false, ready: true, defaultGame: true,
       game: gameVolume, chat: 100,

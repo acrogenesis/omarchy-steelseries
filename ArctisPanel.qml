@@ -16,6 +16,9 @@ Panel {
   property bool appsExpanded: false
   property bool moreExpanded: false
   readonly property var statusModel: service ? service.statusModel : ({})
+  readonly property bool hasSettings: !!(statusModel.supportsWheel || statusModel.supportsSidetone
+    || statusModel.supportsSleep || statusModel.supportsBattery)
+  readonly property bool canConfigure: statusModel.receiver === true && statusModel.online !== false
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property int appCount: (statusModel.apps || []).length
@@ -71,7 +74,7 @@ Panel {
             spacing: Style.space(8)
             PlainText {
               width: Math.max(0, parent.width - powerText.implicitWidth - parent.spacing)
-              text: "Arctis Nova 7X"
+              text: root.statusModel.headsetName || strings.t("headset")
               color: root.foreground
               font.pixelSize: Style.font.body * 1.4
               wrapMode: Text.NoWrap
@@ -85,14 +88,16 @@ Panel {
               text: root.statusModel.receiver === false ? strings.t("receiverDisconnected") : root.statusModel.online === true
                 ? root.statusModel.battery === null ? strings.t("on")
                   : strings.t(root.statusModel.charging ? "shortCharging" : "shortBattery").arg(root.number(root.statusModel.battery))
-                : root.statusModel.online === false ? strings.t("off") : strings.t("unknown")
+                : root.statusModel.online === false ? strings.t("off")
+                  : root.statusModel.receiver === true && root.statusModel.supportsBattery === false
+                    ? strings.t("usbConnected") : strings.t("unknown")
             }
           }
           PlainText {
             width: parent.width
             visible: !!root.statusModel.error || !!root.statusModel.controlError
             color: root.bar ? root.bar.urgent : Color.urgent
-            text: root.statusModel.error || (root.statusModel.controlError ? strings.t("wheelError").arg(root.statusModel.controlError) : "")
+            text: root.statusModel.error || root.statusModel.controlError || ""
           }
           Button {
             width: parent.width
@@ -218,7 +223,7 @@ Panel {
             width: parent.width
             spacing: Style.space(8)
             Button {
-              width: (parent.width - parent.spacing) / 2
+              width: root.hasSettings ? (parent.width - parent.spacing) / 2 : parent.width
               text: strings.tn("appCount", root.appCount).arg(Commons.I18n.formatNumber(root.appCount))
               iconText: root.appsExpanded ? "−" : "+"
               selected: root.appsExpanded
@@ -228,6 +233,7 @@ Panel {
             }
             Button {
               width: (parent.width - parent.spacing) / 2
+              visible: root.hasSettings
               text: strings.t("moreSettings")
               iconText: root.moreExpanded ? "−" : "+"
               selected: root.moreExpanded
@@ -283,18 +289,20 @@ Panel {
           Column {
             width: parent.width
             spacing: Style.space(8)
-            visible: root.moreExpanded
+            visible: root.hasSettings && root.moreExpanded
             Toggle {
               width: parent.width
+              visible: !!root.statusModel.supportsWheel
               label: strings.t("followWheel")
               checked: !!root.statusModel.followWheel
               foreground: root.foreground
               fontFamily: root.fontFamily
               onClicked: root.send({action: "followWheel", value: !root.statusModel.followWheel})
             }
-          PlainText { width: parent.width; text: strings.t("sidetone"); color: root.foreground }
+          PlainText { width: parent.width; visible: !!root.statusModel.supportsSidetone; text: strings.t("sidetone"); color: root.foreground }
           Row {
             width: parent.width
+            visible: !!root.statusModel.supportsSidetone
             spacing: Style.space(4)
             Repeater {
               model: ["sidetoneOff", "sidetoneLow", "sidetoneMedium", "sidetoneHigh"]
@@ -307,14 +315,15 @@ Panel {
                 iconText: selected ? "✓" : ""
                 foreground: root.foreground
                 focusable: true
-                enabled: root.statusModel.online === true && !!root.statusModel.wheelAvailable
-                onClicked: root.send({action: "sidetone", value: index})
+                enabled: root.canConfigure
+                onClicked: root.send({action: "sidetone", value: index, product: root.statusModel.product})
               }
             }
           }
-          PlainText { width: parent.width; text: strings.t("sleep"); color: root.foreground }
+          PlainText { width: parent.width; visible: !!root.statusModel.supportsSleep; text: strings.t("sleep"); color: root.foreground }
           Row {
             width: parent.width
+            visible: !!root.statusModel.supportsSleep
             spacing: Style.space(4)
             Repeater {
               model: [0, 15, 30, 60]
@@ -326,14 +335,21 @@ Panel {
                 iconText: selected ? "✓" : ""
                 foreground: root.foreground
                 focusable: true
-                enabled: root.statusModel.online === true && !!root.statusModel.wheelAvailable
-                onClicked: root.send({action: "sleep", value: modelData})
+                enabled: root.canConfigure
+                onClicked: root.send({action: "sleep", value: modelData, product: root.statusModel.product})
               }
             }
           }
-            PlainText { width: parent.width; text: strings.t("writeOnly"); color: root.foreground; opacity: 0.65 }
+            PlainText {
+              width: parent.width
+              visible: !!(root.statusModel.supportsSidetone || root.statusModel.supportsSleep)
+              text: strings.t("writeOnly")
+              color: root.foreground
+              opacity: 0.65
+            }
             Toggle {
               width: parent.width
+              visible: !!root.statusModel.supportsBattery
               label: strings.t("lowBattery")
               checked: !!root.statusModel.alerts
               foreground: root.foreground

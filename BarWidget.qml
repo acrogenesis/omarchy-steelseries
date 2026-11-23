@@ -17,6 +17,8 @@ BarWidget {
   function toggle() { panel.toggle() }
   function powerText() {
     if (statusModel.receiver === false) return strings.t("shortDisconnected")
+    if (statusModel.receiver === true && statusModel.online === null && statusModel.supportsBattery === false)
+      return strings.t("usbConnected")
     return statusModel.online === true ? strings.t("on") : statusModel.online === false ? strings.t("off") : strings.t("unknown")
   }
   IpcHandler {
@@ -32,7 +34,7 @@ BarWidget {
     anchors.fill: parent
     text: "󰋋 " + (root.statusModel.online === true && root.statusModel.battery !== null && root.statusModel.battery !== undefined
       ? Commons.I18n.formatNumber(root.statusModel.battery) + "%" : root.powerText())
-    dimmed: root.statusModel.online !== true
+    dimmed: root.statusModel.online !== true && !(root.statusModel.receiver === true && root.statusModel.supportsBattery === false)
     active: root.statusModel.online === true && root.statusModel.battery !== null && root.statusModel.battery <= 20
     tooltipText: strings.t("tooltip").arg(root.powerText())
     onPressed: root.toggle()
