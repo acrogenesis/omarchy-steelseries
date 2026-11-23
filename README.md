@@ -54,7 +54,13 @@ Reconnect the receiver, or trigger a change event for its control hidraw node to
 The plugin uses the ID `acrogenesis.arctis` so existing bar layouts and
 saved audio routes carry over.
 
-Clone [acrogenesis/omarchy-steelseries](https://github.com/acrogenesis/omarchy-steelseries) and copy it to `~/.config/omarchy/plugins/acrogenesis.arctis`, then:
+Install HeadsetControl and set up USB permissions as described above, then run:
+
+```sh
+omarchy plugin add https://github.com/acrogenesis/omarchy-steelseries.git --enable
+```
+
+For a manual install, copy the repository to `~/.config/omarchy/plugins/acrogenesis.arctis`, then:
 
 ```sh
 omarchy plugin validate ~/.config/omarchy/plugins/acrogenesis.arctis
@@ -65,6 +71,18 @@ omarchy plugin enable acrogenesis.arctis --section right --before omarchy.audio
 Click the headphones icon and choose **Use SteelSeries Game as default output**. Existing headset playback moves to Game (communication apps to Chat). You can also select SteelSeries Chat directly inside voice apps. Application assignments and volume trims are stored in `~/.config/omarchy/arctis/config.json`.
 
 The shell owns one backend process for all monitors. It polls headset status four times per second while connected, and audio/app state every two seconds. When disabled, it moves virtual playback back to the physical headset, restores the previous default if a virtual output is still selected, and removes its virtual outputs. When enabled again it resumes the Game default if previously requested and either the physical headset or saved alternate output is selected. Selecting another physical output while running is respected. Reconnection recreates the virtual outputs without restarting PipeWire.
+
+## Remove
+
+```sh
+omarchy plugin remove acrogenesis.arctis
+```
+
+Omarchy unloads the plugin and the backend removes its virtual outputs. App
+assignments and preferences remain in `~/.config/omarchy/arctis/config.json`
+for a later reinstall. If you installed the optional Nova 7X udev rule or
+the separate HeadsetControl build just for this plugin, you can remove them
+separately.
 
 ## Diagnostics and tests
 
