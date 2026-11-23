@@ -19,6 +19,7 @@ import time
 
 GAME, CHAT = "arctis_game", "arctis_chat"
 CHANNELS = (GAME, CHAT)
+PROJECT = "omarchy-steelseries"
 STEELSERIES = "1038"
 NOVA_7X = "22a5"
 BATTERY = "CAP_BATTERY_STATUS"
@@ -30,7 +31,7 @@ BASE_AUDIO = {"1290": "1294", "1280": "1282"}
 SPLIT_AUDIO = {"1260", "12ad", "1294", "12c4", "1252", "1282"}
 RUNTIME = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
 CONFIG = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "omarchy/arctis/config.json"
-SOCKET = RUNTIME / "omarchy-arctis.sock"
+SOCKET = RUNTIME / f"{PROJECT}.sock"
 
 
 def terminate_with_parent(expected_parent=None):
@@ -261,7 +262,12 @@ class Backend:
         self.receiver = None
         self.last_low = False
         self.last_graph = 0
-        self.hsc = shutil.which("headsetcontrol") or str(Path.home() / ".local/lib/omarchy-arctis/headsetcontrol")
+        library = Path.home() / ".local/lib"
+        bundled = library / PROJECT / "headsetcontrol"
+        legacy = library / "omarchy-arctis/headsetcontrol"
+        if not bundled.exists() and legacy.exists():
+            bundled = legacy
+        self.hsc = shutil.which("headsetcontrol") or str(bundled)
         self.stopping = False
 
     def save(self):
@@ -367,11 +373,11 @@ class Backend:
             if process is not None and process.poll() is None:
                 continue
             capture = {"media.class": "Audio/Sink", "node.name": name,
-                       "node.description": f"Arctis {label}", "node.virtual": True,
-                       "priority.session": 0, "application.id": "omarchy-arctis"}
-            playback = {"node.name": f"{name}_playback", "node.description": f"Arctis {label} playback",
+                       "node.description": f"SteelSeries {label}", "node.virtual": True,
+                       "priority.session": 0, "application.id": PROJECT}
+            playback = {"node.name": f"{name}_playback", "node.description": f"SteelSeries {label} playback",
                         "node.dont-fallback": True, "node.passive": True,
-                        "application.id": f"omarchy-arctis.{label.lower()}"}
+                        "application.id": f"{PROJECT}.{label.lower()}"}
             backend_pid = os.getpid()
             self.loopbacks[name] = subprocess.Popen([
                 "pw-loopback", "-n", f"omarchy_{name}", "-c", "2", "-m", "[ FL FR ]",
@@ -456,7 +462,7 @@ class Backend:
         seen = set()
         for stream in streams:
             props = stream.get("properties", {})
-            own = str(props.get("application.id", "")).startswith("omarchy-arctis")
+            own = props.get("application.id") in (f"{PROJECT}.game", f"{PROJECT}.chat")
             if own:
                 for channel in CHANNELS:
                     if props.get("node.name") == f"{channel}_playback":
@@ -646,6 +652,7 @@ class Backend:
         self.stop_loopbacks()
 
     def serve(self):
+        # Share the lock with older installs that own the same PipeWire sinks.
         lock = (RUNTIME / "omarchy-arctis.lock").open("w")
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         SOCKET.unlink(missing_ok=True)

@@ -1,4 +1,4 @@
-# Arctis promo
+# SteelSeries Headsets promo
 
 A local, 30-second feature promo, with landscape as the default:
 
@@ -34,7 +34,7 @@ This stereo effect is part of the promo soundtrack.
 | 9–15 s | Live volume and saved settings | Make it sound right. |
 | 15–22 s | Alternate output and return | Headset off? Keep listening. |
 | 22–26 s | Battery and app routing | Small panel. Full control. |
-| 26–30 s | Source repository | Arctis for Omarchy. |
+| 26–30 s | Source repository | SteelSeries Headsets for Omarchy. |
 
 ## Rebuild
 
@@ -48,7 +48,7 @@ From the repository root:
 promo_dir="$HOME/Videos/Arctis Promo"
 python3 promo/capture.py "$promo_dir/build/ui"
 python3 promo/render.py "$promo_dir/build/ui" "$promo_dir/review" --stills
-python3 promo/render.py "$promo_dir/build/ui" "$promo_dir" --suffix=-v5
+python3 promo/render.py "$promo_dir/build/ui" "$promo_dir" --suffix=-v6
 ```
 
 Use `--format both` or `--format vertical` for additional formats. The

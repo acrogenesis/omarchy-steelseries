@@ -327,8 +327,8 @@ arctis.main()
         physical = 'alsa_output.usb-SteelSeries_Arctis_Nova_7X-00.pro-output-0'
         sinks = [{'index': 1, 'name': physical, 'properties': {'alsa.components': 'USB1038:22a5'}}, {'index': 2, 'name': arctis.GAME},
                  {'index': 3, 'name': arctis.CHAT}, {'index': 4, 'name': 'speaker'}]
-        streams = [{'index': 20, 'sink': 1, 'properties': {'application.id': 'omarchy-arctis.game', 'node.name': arctis.GAME + '_playback'}},
-                   {'index': 21, 'sink': 1, 'properties': {'application.id': 'omarchy-arctis.chat', 'node.name': arctis.CHAT + '_playback'}},
+        streams = [{'index': 20, 'sink': 1, 'properties': {'application.id': f"{arctis.PROJECT}.game", 'node.name': arctis.GAME + '_playback'}},
+                   {'index': 21, 'sink': 1, 'properties': {'application.id': f"{arctis.PROJECT}.chat", 'node.name': arctis.CHAT + '_playback'}},
                    {'index': 22, 'sink': 3, 'properties': {'application.id': 'voice'}},
                    {'index': 23, 'sink': 4, 'properties': {'application.id': 'unrelated'}}]
         backend = self.backend()
@@ -541,7 +541,7 @@ class SteelSeriesDiscoveryTests(unittest.TestCase):
             {'index': 2, 'name': game, 'properties': {'device.vendor.id': '0x1038', 'device.product.id': '0x1294', 'alsa.device': '1'}},
             {'index': 3, 'name': arctis.GAME}, {'index': 4, 'name': arctis.CHAT}, {'index': 5, 'name': 'speaker'},
         ]
-        streams = [{'index': index, 'sink': 5, 'properties': {'application.id': f'omarchy-arctis.{role}',
+        streams = [{'index': index, 'sink': 5, 'properties': {'application.id': f'{arctis.PROJECT}.{role}',
                     'node.name': f'arctis_{role}_playback'}} for index, role in ((20, 'game'), (21, 'chat'))]
 
         def run(*args, **kwargs):

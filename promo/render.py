@@ -19,12 +19,12 @@ FONT = '/usr/share/fonts/noto/NotoSans-Bold.ttf'
 REGULAR = '/usr/share/fonts/noto/NotoSans-Regular.ttf'
 MONO = '/usr/share/fonts/TTF/CaskaydiaMonoNerdFont-Regular.ttf'
 SCENES = [
-    (0, 3, 'ARCTIS / OMARCHY', ['Game. Chat.', 'In balance.'], 'Your Nova 7X. At home on Linux.'),
+    (0, 3, 'STEELSERIES / OMARCHY', ['Game. Chat.', 'In balance.'], 'Your Nova 7X. At home on Linux.'),
     (3, 9, '01 / HARDWARE CHATMIX', ['One wheel.', 'Two channels.'], 'Keep the game. Bring in your team.'),
     (9, 15, '02 / YOUR SETTINGS', ['Make it', 'sound right.'], 'Live volume. Sidetone. Auto-off.'),
     (15, 22, '03 / AUTOMATIC OUTPUT', ['Headset off?', 'Keep listening.'], 'Switch to speakers. Return automatically.'),
     (22, 26, '04 / NATIVE CONTROL', ['Small panel.', 'Full control.'], 'Battery status. Per-app routing.'),
-    (26, 30, 'OPEN SOURCE / NOVA 7X', ['ARCTIS', 'for Omarchy.'], 'Your headset. Your desktop.'),
+    (26, 30, 'OPEN SOURCE / NOVA 7X', ['SteelSeries', 'Headsets.'], 'For Omarchy.'),
 ]
 
 
@@ -98,7 +98,7 @@ class Film:
         draw = ImageDraw.Draw(image)
         margin = 72 if vertical else 104
         headphones(draw, margin, 80, 42)
-        text(draw, (margin + 64, 72), 'ARCTIS', 32, face=MONO)
+        text(draw, (margin + 64, 72), 'STEELSERIES HEADSETS', 32, face=MONO)
         text(draw, (w - margin, 88), 'OMARCHY PLUGIN', 20, fill=MUTED, face=MONO, anchor='ra')
         draw.line((margin, 152, w - margin, 152), fill=(52, 66, 56), width=1)
         scene_index, scene = next((i, s) for i, s in enumerate(SCENES) if s[0] <= t < s[1])
@@ -129,7 +129,7 @@ class Film:
         elif scene_index == 5:
             cta_y = 1610 if vertical else 744
             text(labels, (tx, cta_y), 'EXPLORE THE SOURCE', 20, fill=LIME, face=MONO)
-            url = ['github.com/acrogenesis/', 'omarchy-arctis'] if vertical else ['github.com/acrogenesis/omarchy-arctis']
+            url = ['github.com/acrogenesis/', 'omarchy-steelseries'] if vertical else ['github.com/acrogenesis/omarchy-steelseries']
             for i, line in enumerate(url):
                 text(labels, (tx, cta_y + 42 + i * 39), line, 28 if vertical else 25, face=MONO)
         if vertical and scene_index == 3:
@@ -277,7 +277,7 @@ def main():
                 film.frame(round(second*FPS)).save(args.output / f'{name}-{second:.1f}.png')
             print(f'{name} storyboard saved', flush=True)
             continue
-        target = args.output / f'arctis-promo-{name}-30s{args.suffix}.mp4'
+        target = args.output / f'steelseries-promo-{name}-30s{args.suffix}.mp4'
         command = ['ffmpeg', '-hide_banner', '-loglevel', 'warning', '-y', '-f', 'rawvideo', '-pix_fmt', 'rgb24',
                    '-s', f'{film.width}x{film.height}', '-r', str(FPS), '-i', 'pipe:0',
                    '-i', str(score), '-map', '0:v', '-map', '1:a',
