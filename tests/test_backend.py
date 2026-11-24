@@ -385,6 +385,57 @@ arctis.main()
             self.assertIn(unittest.mock.call('pactl', 'set-default-sink', 'speaker'), command.call_args_list)
             self.assertIn(unittest.mock.call('pactl', 'move-sink-input', '20', 'speaker'), command.call_args_list)
 
+    def cleanup_calls(self, backend, default, sinks, streams):
+        def run(*args, **kwargs):
+            return {('pactl', 'get-default-sink'): default,
+                    ('pactl', '-f', 'json', 'list', 'sinks'): sinks,
+                    ('pactl', '-f', 'json', 'list', 'sink-inputs'): streams}.get(args, '')
+        with patch.object(arctis, 'run', side_effect=run) as command, patch.object(backend, 'stop_loopbacks'):
+            backend.cleanup()
+        return [c.args for c in command.call_args_list if c.args[1] in ('move-sink-input', 'set-default-sink')]
+
+    def test_disabling_keeps_a_chat_call_on_the_headset_not_old_speakers(self):
+        # Review finding: speakers were the default before "Use Game as default", the user
+        # later picked a private default, and a call plays through Chat while connected.
+        headset = 'alsa_output.usb-SteelSeries_Arctis_Nova_7X-00.pro-output-0'
+        backend = self.backend()
+        backend.physical = headset
+        backend.headset_outputs = {arctis.GAME: headset, arctis.CHAT: headset}
+        backend.output_target = headset
+        backend.original_default = 'speaker'
+        backend.config['fallback'] = ''
+        sinks = [{'index': 1, 'name': headset}, {'index': 2, 'name': arctis.GAME},
+                 {'index': 3, 'name': arctis.CHAT}, {'index': 4, 'name': 'speaker'}, {'index': 5, 'name': 'private'}]
+        calls = self.cleanup_calls(backend, 'private', sinks, [{'index': 30, 'sink': 3}])
+        self.assertEqual(calls, [('pactl', 'move-sink-input', '30', headset)])
+        # When Game is still the default, the old default comes back, but playback still stays private.
+        calls = self.cleanup_calls(backend, arctis.GAME, sinks, [{'index': 30, 'sink': 3}, {'index': 31, 'sink': 2}])
+        self.assertEqual(calls, [('pactl', 'set-default-sink', 'speaker'),
+                                 ('pactl', 'move-sink-input', '30', headset), ('pactl', 'move-sink-input', '31', headset)])
+
+    def test_disabling_split_headset_returns_each_bus_to_its_endpoint(self):
+        game, chat = 'alsa_output.usb-arctis.pro-output-1', 'alsa_output.usb-arctis.pro-output-0'
+        backend = self.backend()
+        backend.physical, backend.native_mix, backend.output_target = game, True, game
+        backend.headset_outputs = {arctis.GAME: game, arctis.CHAT: chat}
+        backend.original_default = 'speaker'
+        sinks = [{'index': 1, 'name': chat}, {'index': 2, 'name': game}, {'index': 3, 'name': arctis.GAME},
+                 {'index': 4, 'name': arctis.CHAT}, {'index': 5, 'name': 'speaker'}]
+        calls = self.cleanup_calls(backend, arctis.GAME, sinks, [{'index': 20, 'sink': 3}, {'index': 21, 'sink': 4}])
+        self.assertEqual(calls, [('pactl', 'set-default-sink', 'speaker'),
+                                 ('pactl', 'move-sink-input', '20', game), ('pactl', 'move-sink-input', '21', chat)])
+
+    def test_cleanup_without_headset_follows_the_restored_default(self):
+        backend = self.backend()
+        backend.physical, backend.output_target = '', ''
+        backend.original_default = 'speaker'
+        sinks = [{'index': 2, 'name': arctis.GAME}, {'index': 3, 'name': arctis.CHAT}, {'index': 4, 'name': 'speaker'}]
+        calls = self.cleanup_calls(backend, arctis.CHAT, sinks, [{'index': 30, 'sink': 3}])
+        self.assertEqual(calls, [('pactl', 'set-default-sink', 'speaker'), ('pactl', 'move-sink-input', '30', 'speaker')])
+        backend.original_default = ''
+        calls = self.cleanup_calls(backend, arctis.CHAT, sinks, [{'index': 30, 'sink': 3}])
+        self.assertEqual(calls, [], 'With nowhere known to go, PipeWire picks the destination')
+
     def test_restart_resumes_game_default_after_alternate_output_cleanup(self):
         physical = 'alsa_output.usb-SteelSeries_Arctis_Nova_7X-00.pro-output-0'
         backend = self.backend()

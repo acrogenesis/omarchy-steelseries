@@ -628,6 +628,20 @@ class Backend:
                 "fallbackAvailable": fallback_available,
                 "fallbackVolume": sink_volume(self.audio.get(self.config['fallback'], {})) if fallback_available else None}
 
+    def playback_after_cleanup(self, channel, fallback_active, names, default):
+        """Where a Game/Chat stream goes when the virtual outputs close.
+
+        Playback stays where the plugin was sending it: the active alternate
+        output, or else the headset. The previously remembered default is only
+        a default; moving a live call there could play it on open speakers.
+        """
+        if fallback_active:
+            return self.output_target
+        if self.physical in names:
+            headset = self.headset_outputs[channel] if self.native_mix else self.physical
+            return headset if headset in names else self.physical
+        return default if default in names and default not in CHANNELS else ""
+
     def cleanup(self):
         try:
             default = run("pactl", "get-default-sink")
@@ -636,17 +650,15 @@ class Backend:
             fallback_active = (bool(self.config['fallback']) and self.output_target == self.config['fallback']
                                and self.output_target != self.physical)
             restore = self.output_target if fallback_active else (self.original_default if self.original_default in names else self.physical)
-            if restore in names:
-                if default in CHANNELS:
-                    run("pactl", "set-default-sink", restore)
-                indices = {s["index"]: s["name"] for s in sinks if s["name"] in CHANNELS}
-                for stream in run("pactl", "-f", "json", "list", "sink-inputs", json_output=True):
-                    channel = indices.get(stream.get("sink"))
-                    if channel:
-                        target = restore
-                        if self.native_mix and not fallback_active and restore in self.headset_outputs.values():
-                            target = self.headset_outputs[channel]
-                        run("pactl", "move-sink-input", str(stream["index"]), target if target in names else restore)
+            if default in CHANNELS and restore in names:
+                run("pactl", "set-default-sink", restore)
+                default = restore
+            indices = {s["index"]: s["name"] for s in sinks if s["name"] in CHANNELS}
+            for stream in run("pactl", "-f", "json", "list", "sink-inputs", json_output=True):
+                channel = indices.get(stream.get("sink"))
+                target = self.playback_after_cleanup(channel, fallback_active, names, default) if channel else ""
+                if target:
+                    run("pactl", "move-sink-input", str(stream["index"]), target)
         except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired):
             pass
         self.stop_loopbacks()
